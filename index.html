@@ -10,7 +10,7 @@
     <!-- Ícone da aba do navegador -->
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%232563eb'/><text x='50' y='68' font-size='50' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='bold'>⚡</text></svg>">
 
-    <!-- Script para injetar o Manifest PWA dinamicamente (Permite instalação) -->
+    <!-- Script PWA -->
     <script>
         const manifest = {
             "name": "Memória Rápida",
@@ -33,27 +33,25 @@
         document.head.appendChild(link);
     </script>
 
-    <!-- Importação de Bibliotecas via CDN -->
+    <!-- Importação de Bibliotecas -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <!-- Ícones Lucide React -->
-    <script src="https://unpkg.com/lucide-react@0.292.0/dist/umd/lucide-react.min.js"></script>
+    
+    <!-- FontAwesome (Ícones à prova de falhas) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <style>
         body { background-color: #030712; margin: 0; padding: 0; overscroll-behavior: none; }
-        /* Esconde a barra de scroll */
         ::-webkit-scrollbar { display: none; }
     </style>
 </head>
 <body>
     <div id="root"></div>
 
-    <!-- O CÓDIGO DO JOGO -->
     <script type="text/babel">
         const { useState, useEffect, useCallback, useRef } = React;
-        const { Delete, Check, RotateCcw, Home, Play, Trophy, Info, X, Flame, ShoppingCart, Download, Timer, ArrowLeftRight, Coins, Lock, Unlock, Eye, Palette, Music, Globe, Skull } = lucideReact;
 
         const STATES = { MENU: 'MENU', STORE: 'STORE', PREVIEW: 'PREVIEW', LEADERBOARD: 'LEADERBOARD', READY: 'READY', MEMORIZE: 'MEMORIZE', INPUT: 'INPUT', RESULT: 'RESULT' };
         const MODES = { CLASSIC: 'CLASSIC', REVERSE: 'REVERSE', TIME_ATTACK: 'TIME_ATTACK', EXTREME: 'EXTREME' };
@@ -304,13 +302,13 @@
                 </button>
               ))}
               <button onClick={() => handleKeyPress('backspace')} className={`${theme.card} ${theme.border} border-red-900/40 active:scale-95 text-red-500 py-4 rounded-2xl shadow-sm transition-all touch-manipulation flex items-center justify-center h-20 ${isPreview ? 'opacity-80' : ''}`}>
-                <Delete size={32} />
+                <i className="fa-solid fa-delete-left text-[32px]"></i>
               </button>
               <button onClick={() => handleKeyPress('0')} className={`${theme.card} ${theme.border} active:scale-95 ${theme.text} text-3xl font-semibold py-4 rounded-2xl shadow-sm transition-all touch-manipulation flex items-center justify-center h-20 ${isPreview ? 'opacity-80' : ''}`}>
                 0
               </button>
               <button onClick={() => handleKeyPress('submit')} disabled={!isPreview && userInput.length === 0} className={`py-4 rounded-2xl shadow-sm transition-all touch-manipulation flex items-center justify-center h-20 active:scale-95 ${isPreview || userInput.length > 0 ? `${theme.primary} ${theme.primaryActive} ${theme.btnText}` : `${theme.card} ${theme.muted} cursor-not-allowed opacity-50`}`}>
-                <Check size={32} strokeWidth={3} />
+                <i className="fa-solid fa-check text-[32px]"></i>
               </button>
             </div>
           );
@@ -320,8 +318,8 @@
               
               {[STATES.READY, STATES.MEMORIZE, STATES.INPUT, STATES.RESULT, STATES.PREVIEW].includes(gameState) && (
                 <div className="absolute top-8 left-0 right-0 flex justify-between px-6 items-start z-10">
-                  <button onClick={() => gameState === STATES.PREVIEW ? setGameState(STATES.STORE) : handleReturnToMenu()} className={`p-2 ${theme.card} ${theme.border} rounded-full ${theme.muted} hover:${theme.text} transition active:scale-90`}>
-                    {gameState === STATES.PREVIEW ? <X size={20} /> : <Home size={20} />}
+                  <button onClick={() => gameState === STATES.PREVIEW ? setGameState(STATES.STORE) : handleReturnToMenu()} className={`p-2 flex items-center justify-center w-10 h-10 ${theme.card} ${theme.border} rounded-full ${theme.muted} hover:${theme.text} transition active:scale-90`}>
+                    {gameState === STATES.PREVIEW ? <i className="fa-solid fa-xmark text-[20px]"></i> : <i className="fa-solid fa-house text-[20px]"></i>}
                   </button>
                   
                   {gameMode === MODES.TIME_ATTACK && gameState !== STATES.PREVIEW && (
@@ -332,10 +330,10 @@
 
                   <div className="flex flex-col items-end">
                     <div className={`${theme.card} ${theme.border} ${theme.muted} font-medium text-sm flex items-center gap-1 px-3 py-1 rounded-full`}>
-                      <Trophy size={14} className="text-yellow-500"/> {gameState === STATES.PREVIEW ? '99' : bestScore}
+                      <i className="fa-solid fa-trophy text-[14px] text-yellow-500"></i> {gameState === STATES.PREVIEW ? '99' : bestScore}
                     </div>
                     <div className={`mt-2 font-medium tracking-wide flex items-center gap-1 transition-all duration-300 ${score >= 3 && gameMode !== MODES.TIME_ATTACK ? 'text-orange-400 animate-pulse' : theme.text}`}>
-                      {(score >= 3 || gameState === STATES.PREVIEW) && gameMode !== MODES.TIME_ATTACK && <Flame size={18} className="text-orange-500" />}
+                      {(score >= 3 || gameState === STATES.PREVIEW) && gameMode !== MODES.TIME_ATTACK && <i className="fa-solid fa-fire text-[18px] text-orange-500"></i>}
                       <span className={`font-bold text-xl ${(score >= 3 || gameState === STATES.PREVIEW) && gameMode !== MODES.TIME_ATTACK ? 'text-orange-500' : theme.highlight}`}>{gameState === STATES.PREVIEW ? '12' : score}</span> pts
                     </div>
                   </div>
@@ -346,23 +344,23 @@
                 <div className="w-full max-w-sm flex flex-col items-center animate-in fade-in zoom-in duration-300 pb-10 mt-8">
                   <div className="w-full flex justify-between items-center mb-8 px-2">
                     <div className={`flex items-center gap-2 ${theme.card} ${theme.border} px-4 py-2 rounded-full shadow-sm`}>
-                      <Coins size={18} className="text-yellow-400" />
+                      <i className="fa-solid fa-coins text-[18px] text-yellow-400"></i>
                       <span className="font-bold text-yellow-400">{coins}</span>
                     </div>
                     <div className="flex gap-2">
-                      <button onClick={() => { playSound('tap'); setGameState(STATES.LEADERBOARD); }} className={`p-3 ${theme.card} ${theme.border} rounded-full ${theme.text} active:scale-90 transition-all`}><Globe size={20} className="text-blue-400" /></button>
-                      <button onClick={() => { playSound('tap'); setGameState(STATES.STORE); }} className={`p-3 ${theme.card} ${theme.border} rounded-full ${theme.text} active:scale-90 transition-all`}><ShoppingCart size={20} /></button>
+                      <button onClick={() => { playSound('tap'); setGameState(STATES.LEADERBOARD); }} className={`w-10 h-10 flex items-center justify-center ${theme.card} ${theme.border} rounded-full ${theme.text} active:scale-90 transition-all`}><i className="fa-solid fa-globe text-[20px] text-blue-400"></i></button>
+                      <button onClick={() => { playSound('tap'); setGameState(STATES.STORE); }} className={`w-10 h-10 flex items-center justify-center ${theme.card} ${theme.border} rounded-full ${theme.text} active:scale-90 transition-all`}><i className="fa-solid fa-cart-shopping text-[20px]"></i></button>
                     </div>
                   </div>
 
-                  <div className={`${theme.primary} p-4 rounded-3xl mb-6 shadow-lg`}><Play size={48} className={theme.btnText} fill="currentColor" /></div>
+                  <div className={`flex items-center justify-center w-20 h-20 ${theme.primary} rounded-3xl mb-6 shadow-lg`}><i className={`fa-solid fa-play text-[40px] ${theme.btnText}`}></i></div>
                   <h1 className="text-4xl font-extrabold mb-2 text-center tracking-tight">Memória Rápida</h1>
                   
                   <div className={`grid grid-cols-2 gap-2 w-full p-2 ${theme.card} ${theme.border} rounded-2xl mb-8`}>
-                    <button onClick={() => { playSound('tap'); setGameMode(MODES.CLASSIC); }} className={`py-3 text-xs sm:text-sm font-bold rounded-xl flex items-center justify-center gap-2 transition-all ${gameMode === MODES.CLASSIC ? `${theme.primary} ${theme.btnText}` : theme.muted}`}><Play size={16}/> Clássico</button>
-                    <button onClick={() => { playSound('tap'); setGameMode(MODES.REVERSE); }} className={`py-3 text-xs sm:text-sm font-bold rounded-xl flex items-center justify-center gap-2 transition-all ${gameMode === MODES.REVERSE ? `${theme.primary} ${theme.btnText}` : theme.muted}`}><ArrowLeftRight size={16}/> Reverso</button>
-                    <button onClick={() => { playSound('tap'); setGameMode(MODES.TIME_ATTACK); }} className={`py-3 text-xs sm:text-sm font-bold rounded-xl flex items-center justify-center gap-2 transition-all ${gameMode === MODES.TIME_ATTACK ? `${theme.primary} ${theme.btnText}` : theme.muted}`}><Timer size={16}/> 60 Seg</button>
-                    <button onClick={() => { playSound('tap'); setGameMode(MODES.EXTREME); }} className={`py-3 text-xs sm:text-sm font-bold rounded-xl flex items-center justify-center gap-2 transition-all ${gameMode === MODES.EXTREME ? `bg-red-600 text-white shadow-[0_0_10px_red]` : theme.muted}`}><Skull size={16}/> Extremo</button>
+                    <button onClick={() => { playSound('tap'); setGameMode(MODES.CLASSIC); }} className={`py-3 text-xs sm:text-sm font-bold rounded-xl flex items-center justify-center gap-2 transition-all ${gameMode === MODES.CLASSIC ? `${theme.primary} ${theme.btnText}` : theme.muted}`}><i className="fa-solid fa-play text-[16px]"></i> Clássico</button>
+                    <button onClick={() => { playSound('tap'); setGameMode(MODES.REVERSE); }} className={`py-3 text-xs sm:text-sm font-bold rounded-xl flex items-center justify-center gap-2 transition-all ${gameMode === MODES.REVERSE ? `${theme.primary} ${theme.btnText}` : theme.muted}`}><i className="fa-solid fa-arrow-right-arrow-left text-[16px]"></i> Reverso</button>
+                    <button onClick={() => { playSound('tap'); setGameMode(MODES.TIME_ATTACK); }} className={`py-3 text-xs sm:text-sm font-bold rounded-xl flex items-center justify-center gap-2 transition-all ${gameMode === MODES.TIME_ATTACK ? `${theme.primary} ${theme.btnText}` : theme.muted}`}><i className="fa-solid fa-stopwatch text-[16px]"></i> 60 Seg</button>
+                    <button onClick={() => { playSound('tap'); setGameMode(MODES.EXTREME); }} className={`py-3 text-xs sm:text-sm font-bold rounded-xl flex items-center justify-center gap-2 transition-all ${gameMode === MODES.EXTREME ? `bg-red-600 text-white shadow-[0_0_10px_red]` : theme.muted}`}><i className="fa-solid fa-skull text-[16px]"></i> Extremo</button>
                   </div>
                   
                   <div className="w-full space-y-3">
@@ -377,21 +375,21 @@
                     ))}
                   </div>
 
-                  <button onClick={() => handleInstallPWA()} className={`mt-8 flex items-center gap-2 ${theme.muted} hover:${theme.text} text-sm font-medium transition-colors`}><Download size={16} /> Instalar Aplicação</button>
+                  <button onClick={() => handleInstallPWA()} className={`mt-8 flex items-center gap-2 ${theme.muted} hover:${theme.text} text-sm font-medium transition-colors`}><i className="fa-solid fa-download text-[16px]"></i> Instalar Aplicação</button>
                 </div>
               )}
 
               {gameState === STATES.STORE && (
-                <div className="w-full max-w-md flex flex-col items-center animate-in fade-in duration-300 pb-10">
+                <div className="w-full max-w-md flex flex-col items-center animate-in fade-in duration-300 pb-10 mt-4">
                   <div className="w-full flex justify-between items-center mb-6 px-2">
-                     <button onClick={() => { playSound('tap'); setGameState(STATES.MENU); }} className={`p-2 ${theme.card} rounded-full`}><X size={24} /></button>
+                     <button onClick={() => { playSound('tap'); setGameState(STATES.MENU); }} className={`w-10 h-10 flex items-center justify-center ${theme.card} rounded-full`}><i className="fa-solid fa-xmark text-[24px]"></i></button>
                      <h2 className="text-2xl font-bold">Loja</h2>
-                     <div className="flex items-center gap-1 bg-yellow-400/20 px-3 py-1 rounded-full text-yellow-400 font-bold">{coins} <Coins size={16} /></div>
+                     <div className="flex items-center gap-1 bg-yellow-400/20 px-3 py-1 rounded-full text-yellow-400 font-bold">{coins} <i className="fa-solid fa-coins text-[16px]"></i></div>
                   </div>
 
                   <div className={`flex w-full p-1 ${theme.card} ${theme.border} rounded-2xl mb-6`}>
-                    <button onClick={() => { playSound('tap'); setStoreTab('themes'); }} className={`flex-1 py-2 font-bold rounded-xl flex items-center justify-center gap-2 ${storeTab === 'themes' ? 'bg-blue-600 text-white' : theme.muted}`}><Palette size={18}/> Temas</button>
-                    <button onClick={() => { playSound('tap'); setStoreTab('sounds'); }} className={`flex-1 py-2 font-bold rounded-xl flex items-center justify-center gap-2 ${storeTab === 'sounds' ? 'bg-blue-600 text-white' : theme.muted}`}><Music size={18}/> Sons</button>
+                    <button onClick={() => { playSound('tap'); setStoreTab('themes'); }} className={`flex-1 py-2 font-bold rounded-xl flex items-center justify-center gap-2 ${storeTab === 'themes' ? 'bg-blue-600 text-white' : theme.muted}`}><i className="fa-solid fa-palette text-[18px]"></i> Temas</button>
+                    <button onClick={() => { playSound('tap'); setStoreTab('sounds'); }} className={`flex-1 py-2 font-bold rounded-xl flex items-center justify-center gap-2 ${storeTab === 'sounds' ? 'bg-blue-600 text-white' : theme.muted}`}><i className="fa-solid fa-music text-[18px]"></i> Sons</button>
                   </div>
 
                   <div className="w-full space-y-4 px-2 overflow-y-auto" style={{maxHeight: '65vh'}}>
@@ -403,16 +401,16 @@
                           <div className="flex justify-between items-center mb-4">
                             <div className="flex items-center gap-3">
                                <div className={`w-10 h-10 rounded-full border-2 border-white/20 flex items-center justify-center ${t.primary}`}><span className={`${t.btnText} text-xs font-black`}>Ab</span></div>
-                               <div><h3 className="font-bold text-lg text-white">{t.name}</h3>{!isUnlocked && <p className="text-yellow-400 text-sm font-medium flex items-center gap-1"><Coins size={14}/> {t.cost}</p>}</div>
+                               <div><h3 className="font-bold text-lg text-white">{t.name}</h3>{!isUnlocked && <p className="text-yellow-400 text-sm font-medium flex items-center gap-1"><i className="fa-solid fa-coins text-[14px]"></i> {t.cost}</p>}</div>
                             </div>
                             {isActive && <span className="bg-green-500 text-black text-xs font-bold px-2 py-1 rounded-md">EM USO</span>}
                           </div>
                           <div className="flex gap-2 mt-2">
-                            <button onClick={() => openPreview(t.id)} className="flex-1 py-3 rounded-xl font-bold transition-all flex justify-center items-center gap-2 bg-gray-800 hover:bg-gray-700 text-white active:scale-95"><Eye size={18} /> Ver</button>
+                            <button onClick={() => openPreview(t.id)} className="flex-1 py-3 rounded-xl font-bold transition-all flex justify-center items-center gap-2 bg-gray-800 hover:bg-gray-700 text-white active:scale-95"><i className="fa-solid fa-eye text-[18px]"></i> Ver</button>
                             {isUnlocked ? (
                               <button disabled={isActive} onClick={() => equipItem('theme', t.id)} className={`flex-[2] py-3 rounded-xl font-bold transition-all ${isActive ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-blue-600 active:bg-blue-700 text-white active:scale-95'}`}>{isActive ? 'Equipado' : 'Equipar'}</button>
                             ) : (
-                              <button onClick={() => buyItem('theme', t.id, t.cost)} className={`flex-[2] py-3 rounded-xl font-bold transition-all flex justify-center items-center gap-2 active:scale-95 ${coins >= t.cost ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-gray-500 cursor-not-allowed'}`}>{coins >= t.cost ? <><Unlock size={18}/> Comprar</> : <Lock size={18}/>}</button>
+                              <button onClick={() => buyItem('theme', t.id, t.cost)} className={`flex-[2] py-3 rounded-xl font-bold transition-all flex justify-center items-center gap-2 active:scale-95 ${coins >= t.cost ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-gray-500 cursor-not-allowed'}`}>{coins >= t.cost ? <><i className="fa-solid fa-lock-open text-[18px]"></i> Comprar</> : <i className="fa-solid fa-lock text-[18px]"></i>}</button>
                             )}
                           </div>
                         </div>
@@ -426,15 +424,15 @@
                         <div key={s.id} className={`w-full p-4 rounded-3xl border-2 ${isActive ? 'border-purple-500' : 'border-gray-800'} bg-gray-900 flex flex-col`}>
                           <div className="flex justify-between items-center mb-4">
                             <div className="flex items-center gap-3">
-                               <div className="w-10 h-10 rounded-full border-2 border-gray-700 bg-gray-800 flex items-center justify-center text-purple-400"><Music size={18}/></div>
-                               <div><h3 className="font-bold text-lg text-white">{s.name}</h3><p className="text-gray-400 text-xs">{s.desc}</p>{!isUnlocked && <p className="text-yellow-400 text-sm font-medium flex items-center gap-1 mt-1"><Coins size={14}/> {s.cost}</p>}</div>
+                               <div className="w-10 h-10 rounded-full border-2 border-gray-700 bg-gray-800 flex items-center justify-center text-purple-400"><i className="fa-solid fa-music text-[18px]"></i></div>
+                               <div><h3 className="font-bold text-lg text-white">{s.name}</h3><p className="text-gray-400 text-xs">{s.desc}</p>{!isUnlocked && <p className="text-yellow-400 text-sm font-medium flex items-center gap-1 mt-1"><i className="fa-solid fa-coins text-[14px]"></i> {s.cost}</p>}</div>
                             </div>
                             {isActive && <span className="bg-purple-500 text-white text-xs font-bold px-2 py-1 rounded-md">ATIVO</span>}
                           </div>
                           {isUnlocked ? (
                             <button disabled={isActive} onClick={() => equipItem('sound', s.id)} className={`w-full py-3 rounded-xl font-bold transition-all ${isActive ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-blue-600 active:bg-blue-700 text-white active:scale-95'}`}>{isActive ? 'Selecionado' : 'Selecionar Som'}</button>
                           ) : (
-                            <button onClick={() => buyItem('sound', s.id, s.cost)} className={`w-full py-3 rounded-xl font-bold transition-all flex justify-center items-center gap-2 active:scale-95 ${coins >= s.cost ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-gray-500 cursor-not-allowed'}`}>{coins >= s.cost ? <><Unlock size={18}/> Comprar</> : <Lock size={18}/>}</button>
+                            <button onClick={() => buyItem('sound', s.id, s.cost)} className={`w-full py-3 rounded-xl font-bold transition-all flex justify-center items-center gap-2 active:scale-95 ${coins >= s.cost ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-gray-500 cursor-not-allowed'}`}>{coins >= s.cost ? <><i className="fa-solid fa-lock-open text-[18px]"></i> Comprar</> : <i className="fa-solid fa-lock text-[18px]"></i>}</button>
                           )}
                         </div>
                       )
@@ -454,21 +452,21 @@
                   <Numpad isPreview={true} />
                   <div className={`absolute bottom-4 left-4 right-4 ${theme.card} ${theme.border} border-2 rounded-3xl p-4 shadow-2xl flex items-center justify-between`}>
                      <div className="flex flex-col"><span className="text-xs font-bold uppercase opacity-70">Tema</span><span className="font-black text-lg">{THEMES[previewThemeId].name}</span></div>
-                     <button onClick={() => buyItem('theme', previewThemeId, THEMES[previewThemeId].cost)} className={`px-6 py-3 rounded-xl font-bold flex items-center gap-2 active:scale-95 ${coins >= THEMES[previewThemeId].cost ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-gray-500'}`}>{coins >= THEMES[previewThemeId].cost ? <><Unlock size={18}/> {THEMES[previewThemeId].cost}</> : <><Lock size={18}/> {THEMES[previewThemeId].cost}</>}</button>
+                     <button onClick={() => buyItem('theme', previewThemeId, THEMES[previewThemeId].cost)} className={`px-6 py-3 rounded-xl font-bold flex items-center gap-2 active:scale-95 ${coins >= THEMES[previewThemeId].cost ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-gray-500'}`}>{coins >= THEMES[previewThemeId].cost ? <><i className="fa-solid fa-lock-open text-[18px]"></i> {THEMES[previewThemeId].cost}</> : <><i className="fa-solid fa-lock text-[18px]"></i> {THEMES[previewThemeId].cost}</>}</button>
                   </div>
                 </div>
               )}
 
               {gameState === STATES.LEADERBOARD && (
-                <div className="w-full max-w-md flex flex-col items-center animate-in fade-in duration-300 pb-10">
+                <div className="w-full max-w-md flex flex-col items-center animate-in fade-in duration-300 pb-10 mt-4">
                   <div className="w-full flex justify-between items-center mb-8 px-2">
-                     <button onClick={() => { playSound('tap'); setGameState(STATES.MENU); }} className={`p-2 ${theme.card} rounded-full`}><X size={24} /></button>
-                     <h2 className="text-2xl font-bold flex items-center gap-2"><Globe className="text-blue-400"/> Ranking Global</h2>
+                     <button onClick={() => { playSound('tap'); setGameState(STATES.MENU); }} className={`w-10 h-10 flex items-center justify-center ${theme.card} rounded-full`}><i className="fa-solid fa-xmark text-[24px]"></i></button>
+                     <h2 className="text-2xl font-bold flex items-center gap-2"><i className="fa-solid fa-globe text-[20px] text-blue-400"></i> Ranking Global</h2>
                      <div className="w-10"></div>
                   </div>
                   <div className="relative w-full rounded-3xl overflow-hidden bg-gray-900 border border-gray-800 p-2">
                     <div className="absolute inset-0 bg-gray-950/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center p-6 text-center">
-                      <Lock size={48} className="text-blue-500 mb-4" />
+                      <i className="fa-solid fa-lock text-[48px] text-blue-500 mb-4"></i>
                       <h3 className="text-2xl font-black text-white mb-2">Em Breve</h3>
                       <p className="text-gray-400 mb-6">A preparar servidores para a tabela global. Prepara os reflexos!</p>
                       <button onClick={() => setGameState(STATES.MENU)} className="bg-blue-600 text-white font-bold py-3 px-8 rounded-xl active:scale-95 transition-all">Voltar ao Menu</button>
@@ -520,14 +518,14 @@
                 <div className="w-full max-w-sm flex flex-col items-center text-center animate-in fade-in zoom-in-95 duration-300 mt-8">
                   {gameMode === MODES.TIME_ATTACK && timeLeft <= 0 ? (
                      <>
-                        <div className="w-24 h-24 rounded-full flex items-center justify-center mb-6 bg-blue-500/20 text-blue-400"><Timer size={48} /></div>
+                        <div className="w-24 h-24 rounded-full flex items-center justify-center mb-6 bg-blue-500/20 text-blue-400"><i className="fa-solid fa-stopwatch text-[48px]"></i></div>
                         <h2 className="text-3xl font-bold mb-2 text-blue-400">Tempo Esgotado!</h2>
                         <p className={`text-xl mb-8 ${theme.muted}`}>Obtiveste <strong className={theme.text}>{score} pontos</strong></p>
                      </>
                   ) : (
                      <>
                         <div className={`w-24 h-24 rounded-full flex items-center justify-center mb-6 shadow-lg relative ${isCorrect ? 'bg-green-500/20 text-green-500 shadow-green-500/20' : 'bg-red-500/20 text-red-500 shadow-red-500/20'}`}>
-                          {isCorrect ? <Check size={48} strokeWidth={3} /> : <Delete size={48} strokeWidth={3} />}
+                          {isCorrect ? <i className="fa-solid fa-check text-[48px]"></i> : <i className="fa-solid fa-delete-left text-[48px]"></i>}
                         </div>
                         <h2 className={`text-3xl font-bold mb-6 ${isCorrect ? 'text-green-500' : 'text-red-500'}`}>{isCorrect ? 'Excelente!' : 'Não foi desta vez'}</h2>
                      </>
@@ -543,7 +541,7 @@
 
                   <button onClick={() => startRound(gameMode === MODES.TIME_ATTACK || !isCorrect)} className={`w-full font-bold py-4 px-8 rounded-2xl text-lg flex items-center justify-center gap-2 transition-all active:scale-95 touch-manipulation shadow-lg ${theme.primary} ${theme.primaryActive} ${theme.btnText}`}>
                     {gameMode === MODES.TIME_ATTACK && timeLeft <= 0 ? 'Jogar Novamente' : (isCorrect ? 'Próxima Ronda' : 'Tentar Novamente')}
-                    <RotateCcw size={20} />
+                    <i className="fa-solid fa-rotate-left text-[20px]"></i>
                   </button>
                 </div>
               )}
@@ -556,4 +554,5 @@
     </script>
 </body>
 </html>
+
 
