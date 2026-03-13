@@ -1,552 +1,559 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Delete, Check, RotateCcw, Home, Play, Trophy, Info, X, Flame, ShoppingCart, Download, Timer, ArrowLeftRight, Coins, Lock, Unlock, Eye, Palette, Music, Globe, Skull } from 'lucide-react';
-
-const STATES = { MENU: 'MENU', STORE: 'STORE', PREVIEW: 'PREVIEW', LEADERBOARD: 'LEADERBOARD', READY: 'READY', MEMORIZE: 'MEMORIZE', INPUT: 'INPUT', RESULT: 'RESULT' };
-const MODES = { CLASSIC: 'CLASSIC', REVERSE: 'REVERSE', TIME_ATTACK: 'TIME_ATTACK', EXTREME: 'EXTREME' };
-
-// --- CATÁLOGO DA LOJA ---
-const THEMES = {
-  classic: { id: 'classic', name: 'Clássico iOS', cost: 0, bg: 'bg-gray-950', card: 'bg-gray-900', border: 'border-gray-800', text: 'text-white', muted: 'text-gray-400', primary: 'bg-blue-600', primaryActive: 'active:bg-blue-700', highlight: 'text-blue-400', btnText: 'text-white' },
-  neon: { id: 'neon', name: 'Matrix Néon', cost: 50, bg: 'bg-black', card: 'bg-gray-900', border: 'border-green-500/50', text: 'text-green-400', muted: 'text-green-700', primary: 'bg-green-600 shadow-[0_0_15px_#16a34a]', primaryActive: 'active:bg-green-700', highlight: 'text-green-300', btnText: 'text-black font-black' },
-  dracula: { id: 'dracula', name: 'Noite Drácula', cost: 100, bg: 'bg-[#282a36]', card: 'bg-[#44475a]', border: 'border-[#6272a4]', text: 'text-[#f8f8f2]', muted: 'text-[#6272a4]', primary: 'bg-[#ff79c6] shadow-[0_0_10px_rgba(255,121,198,0.4)]', primaryActive: 'active:bg-[#bd93f9]', highlight: 'text-[#8be9fd]', btnText: 'text-[#282a36] font-bold' },
-  ocean: { id: 'ocean', name: 'Profundezas', cost: 120, bg: 'bg-slate-950', card: 'bg-blue-950', border: 'border-cyan-800', text: 'text-cyan-50', muted: 'text-cyan-600', primary: 'bg-teal-500', primaryActive: 'active:bg-teal-600', highlight: 'text-teal-300', btnText: 'text-slate-950 font-black' },
-  cyberpunk: { id: 'cyberpunk', name: 'Cyberpunk', cost: 150, bg: 'bg-yellow-400', card: 'bg-zinc-900', border: 'border-cyan-400 border-2', text: 'text-cyan-400', muted: 'text-zinc-500', primary: 'bg-pink-600 shadow-[4px_4px_0px_#000]', primaryActive: 'active:translate-y-1 active:shadow-[0px_0px_0px_#000]', highlight: 'text-pink-500', btnText: 'text-white font-black uppercase' },
-  sunset: { id: 'sunset', name: 'Pôr do Sol Retro', cost: 200, bg: 'bg-[#1a0b2e]', card: 'bg-[#2d1b4e]', border: 'border-[#f72585]', text: 'text-[#fba300]', muted: 'text-[#b5179e]', primary: 'bg-gradient-to-r from-[#f72585] to-[#4361ee]', primaryActive: 'active:opacity-80', highlight: 'text-[#4cc9f0]', btnText: 'text-white font-bold' }
-};
-
-const SOUND_PACKS = {
-  classic: { id: 'classic', name: 'Bip Padrão', cost: 0, desc: 'Sons limpos e mecânicos' },
-  retro: { id: 'retro', name: 'Arcade 8-bit', cost: 100, desc: 'Nostalgia dos anos 80' },
-  scifi: { id: 'scifi', name: 'Ficção Científica', cost: 150, desc: 'Lasers e hologramas' }
-};
-
-export default function App() {
-  const [gameState, setGameState] = useState(STATES.MENU);
-  const [difficulty, setDifficulty] = useState(4);
-  const [gameMode, setGameMode] = useState(MODES.CLASSIC);
-  const [storeTab, setStoreTab] = useState('themes'); // 'themes' ou 'sounds'
-  
-  // Estados do Jogo
-  const [targetNumber, setTargetNumber] = useState('');
-  const [userInput, setUserInput] = useState('');
-  const [score, setScore] = useState(0);
-  const [bestScore, setBestScore] = useState(0);
-  const [isCorrect, setIsCorrect] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(60); 
-  const [distractions, setDistractions] = useState([]);
-  
-  // Economia e Personalização
-  const [coins, setCoins] = useState(() => parseInt(localStorage.getItem('memory-coins') || '0'));
-  
-  const [unlockedThemes, setUnlockedThemes] = useState(() => JSON.parse(localStorage.getItem('memory-themes') || '["classic"]'));
-  const [activeTheme, setActiveTheme] = useState(() => localStorage.getItem('memory-active-theme') || 'classic');
-  const [previewThemeId, setPreviewThemeId] = useState(null); 
-  
-  const [unlockedSounds, setUnlockedSounds] = useState(() => JSON.parse(localStorage.getItem('memory-sounds') || '["classic"]'));
-  const [activeSoundPack, setActiveSoundPack] = useState(() => localStorage.getItem('memory-active-sound') || 'classic');
-
-  const [deferredPrompt, setDeferredPrompt] = useState(null);
-  const audioCtxRef = useRef(null);
-
-  const currentThemeId = gameState === STATES.PREVIEW && previewThemeId ? previewThemeId : activeTheme;
-  const theme = THEMES[currentThemeId] || THEMES.classic;
-
-  // Escuta para instalação da PWA
-  useEffect(() => {
-    window.addEventListener('beforeinstallprompt', (e) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-    });
-  }, []);
-
-  // Carrega recordes
-  useEffect(() => {
-    const saved = localStorage.getItem(`memory-best-${gameMode}-${difficulty}`);
-    setBestScore(saved ? parseInt(saved, 10) : 0);
-  }, [difficulty, gameMode]);
-
-  // --- SINTETIZADOR DE ÁUDIO DINÂMICO ---
-  const playSound = useCallback((type) => {
-    try {
-      if (!audioCtxRef.current) {
-        audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
-      }
-      const ctx = audioCtxRef.current;
-      if (ctx.state === 'suspended') ctx.resume();
-
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      const now = ctx.currentTime;
-
-      // Lógica por Pacote de Som
-      if (activeSoundPack === 'retro') {
-        osc.type = 'square';
-        if (type === 'tap') { osc.frequency.setValueAtTime(600, now); gain.gain.setValueAtTime(0.08, now); osc.start(now); osc.stop(now + 0.08); }
-        else if (type === 'success') { osc.frequency.setValueAtTime(400, now); osc.frequency.setValueAtTime(600, now + 0.1); gain.gain.setValueAtTime(0.1, now); osc.start(now); osc.stop(now + 0.2); }
-        else if (type === 'error') { osc.frequency.setValueAtTime(150, now); gain.gain.setValueAtTime(0.1, now); osc.start(now); osc.stop(now + 0.3); }
-      } 
-      else if (activeSoundPack === 'scifi') {
-        if (type === 'tap') { osc.type = 'sine'; osc.frequency.setValueAtTime(1200, now); osc.frequency.exponentialRampToValueAtTime(400, now + 0.1); gain.gain.setValueAtTime(0.1, now); osc.start(now); osc.stop(now + 0.1); }
-        else if (type === 'success') { osc.type = 'triangle'; osc.frequency.setValueAtTime(800, now); osc.frequency.linearRampToValueAtTime(1600, now + 0.2); gain.gain.setValueAtTime(0.1, now); osc.start(now); osc.stop(now + 0.2); }
-        else if (type === 'error') { osc.type = 'sawtooth'; osc.frequency.setValueAtTime(200, now); osc.frequency.linearRampToValueAtTime(50, now + 0.4); gain.gain.setValueAtTime(0.1, now); osc.start(now); osc.stop(now + 0.4); }
-      } 
-      else { // Classic
-        if (type === 'tap') { osc.type = 'sine'; osc.frequency.setValueAtTime(800, now); gain.gain.setValueAtTime(0.1, now); osc.start(now); osc.stop(now + 0.05); }
-        else if (type === 'success') { osc.type = 'square'; osc.frequency.setValueAtTime(400, now); osc.frequency.exponentialRampToValueAtTime(1000, now + 0.1); gain.gain.setValueAtTime(0.1, now); osc.start(now); osc.stop(now + 0.15); }
-        else if (type === 'error') { osc.type = 'sawtooth'; osc.frequency.setValueAtTime(300, now); osc.frequency.exponentialRampToValueAtTime(100, now + 0.3); gain.gain.setValueAtTime(0.1, now); osc.start(now); osc.stop(now + 0.3); }
-      }
-    } catch (e) { /* Ignora erros de áudio */ }
-
-    if (navigator.vibrate) {
-      if (type === 'tap') navigator.vibrate(10);
-      else if (type === 'success') navigator.vibrate([30, 50, 30]);
-      else if (type === 'error') navigator.vibrate([50, 50, 50]);
-    }
-  }, [activeSoundPack]);
-
-  const handleInstallPWA = async () => {
-    if (deferredPrompt) {
-      deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      if (outcome === 'accepted') setDeferredPrompt(null);
-    } else { alert("Para instalar no iOS: Toque no botão 'Partilhar' no Safari e depois em 'Adicionar ao Ecrã Principal'."); }
-  };
-
-  // --- LOJA UNIVERSAL ---
-  const buyItem = (type, id, cost) => {
-    if (coins >= cost) {
-      const newCoins = coins - cost;
-      setCoins(newCoins);
-      localStorage.setItem('memory-coins', newCoins);
-      playSound('success');
-      
-      if (type === 'theme') {
-        const newUnlocked = [...unlockedThemes, id];
-        setUnlockedThemes(newUnlocked);
-        localStorage.setItem('memory-themes', JSON.stringify(newUnlocked));
-        setActiveTheme(id);
-        localStorage.setItem('memory-active-theme', id);
-        if (gameState === STATES.PREVIEW) setGameState(STATES.STORE);
-      } else if (type === 'sound') {
-        const newUnlocked = [...unlockedSounds, id];
-        setUnlockedSounds(newUnlocked);
-        localStorage.setItem('memory-sounds', JSON.stringify(newUnlocked));
-        setActiveSoundPack(id);
-        localStorage.setItem('memory-active-sound', id);
-      }
-    } else playSound('error');
-  };
-
-  const equipItem = (type, id) => {
-    playSound('tap');
-    if (type === 'theme') { setActiveTheme(id); localStorage.setItem('memory-active-theme', id); } 
-    else if (type === 'sound') { setActiveSoundPack(id); localStorage.setItem('memory-active-sound', id); }
-  };
-
-  const openPreview = (themeId) => { playSound('tap'); setPreviewThemeId(themeId); setGameState(STATES.PREVIEW); };
-
-  // --- LÓGICA DO JOGO ---
-  const generateNumber = useCallback((digits) => {
-    const min = Math.pow(10, digits - 1);
-    const max = Math.pow(10, digits) - 1;
-    return Math.floor(Math.random() * (max - min + 1) + min).toString();
-  }, []);
-
-  const generateDistractions = useCallback(() => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%';
-    const numDistractions = difficulty * 2;
-    const dist = [];
-    for (let i = 0; i < numDistractions; i++) {
-      dist.push({
-        id: i,
-        char: chars.charAt(Math.floor(Math.random() * chars.length)),
-        top: `${Math.random() * 80 + 10}%`,
-        left: `${Math.random() * 80 + 10}%`,
-        scale: Math.random() * 1.5 + 0.5,
-        opacity: Math.random() * 0.5 + 0.2,
-      });
-    }
-    return dist;
-  }, [difficulty]);
-
-  const startRound = useCallback((resetScore = false) => {
-    if (resetScore) {
-      setScore(0);
-      if (gameMode === MODES.TIME_ATTACK) setTimeLeft(60);
-    }
-    setTargetNumber(generateNumber(difficulty));
-    if (gameMode === MODES.EXTREME) setDistractions(generateDistractions());
-    setUserInput('');
-    setGameState(STATES.READY);
-  }, [difficulty, gameMode, generateNumber, generateDistractions]);
-
-  // Temporizador Time Attack
-  useEffect(() => {
-    if (gameMode !== MODES.TIME_ATTACK || ![STATES.READY, STATES.MEMORIZE, STATES.INPUT].includes(gameState)) return;
-    if (timeLeft <= 0) { setIsCorrect(false); setGameState(STATES.RESULT); playSound('error'); return; }
-    const timer = setInterval(() => setTimeLeft(t => t - 1), 1000);
-    return () => clearInterval(timer);
-  }, [gameMode, gameState, timeLeft, playSound]);
-
-  // Tempo de Ecrã
-  useEffect(() => {
-    let timer;
-    if (gameState === STATES.READY) {
-      timer = setTimeout(() => setGameState(STATES.MEMORIZE), 800);
-    } else if (gameState === STATES.MEMORIZE) {
-      const baseTime = difficulty * 50 + 150;
-      // No modo extremo é um pouco mais lento para ser justo com a confusão visual
-      const progressiveTime = Math.max(baseTime - (score * 5), gameMode === MODES.EXTREME ? 250 : 100); 
-      timer = setTimeout(() => setGameState(STATES.INPUT), progressiveTime);
-    }
-    return () => clearTimeout(timer);
-  }, [gameState, difficulty, score, gameMode]);
-
-  // Auto-submissão
-  useEffect(() => {
-    if (gameState === STATES.INPUT && userInput.length === difficulty) {
-      const autoSubmitTimer = setTimeout(() => checkResult(), 150);
-      return () => clearTimeout(autoSubmitTimer);
-    }
-  }, [userInput, gameState, difficulty]);
-
-  const checkResult = useCallback(() => {
-    const expectedAnswer = gameMode === MODES.REVERSE ? targetNumber.split('').reverse().join('') : targetNumber;
-    const correct = userInput === expectedAnswer;
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Memória Rápida</title>
     
-    if (correct) {
-      playSound('success');
-      const newScore = score + 1;
-      setScore(newScore);
-      
-      // Bónus de Moedas
-      let coinsEarned = difficulty;
-      if (gameMode === MODES.REVERSE) coinsEarned += 2;
-      if (gameMode === MODES.EXTREME) coinsEarned += 4;
-      
-      setCoins(c => {
-        const nc = c + coinsEarned;
-        localStorage.setItem('memory-coins', nc);
-        return nc;
-      });
+    <!-- Ícone da aba do navegador -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%232563eb'/><text x='50' y='68' font-size='50' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='bold'>⚡</text></svg>">
 
-      if (newScore > bestScore) {
-        setBestScore(newScore);
-        localStorage.setItem(`memory-best-${gameMode}-${difficulty}`, newScore.toString());
-      }
-      
-      if (gameMode === MODES.TIME_ATTACK && timeLeft > 0) { startRound(false); return; }
-    } else playSound('error');
+    <!-- Script para injetar o Manifest PWA dinamicamente (Permite instalação) -->
+    <script>
+        const manifest = {
+            "name": "Memória Rápida",
+            "short_name": "Memória",
+            "start_url": ".",
+            "display": "standalone",
+            "background_color": "#030712",
+            "theme_color": "#2563eb",
+            "icons": [{
+                "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%232563eb'/><text x='50' y='68' font-size='50' text-anchor='middle' fill='white' font-family='sans-serif' font-weight='bold'>⚡</text></svg>",
+                "sizes": "512x512",
+                "type": "image/svg+xml",
+                "purpose": "any maskable"
+            }]
+        };
+        const blob = new Blob([JSON.stringify(manifest)], {type: 'application/json'});
+        const link = document.createElement('link');
+        link.rel = 'manifest';
+        link.href = URL.createObjectURL(blob);
+        document.head.appendChild(link);
+    </script>
+
+    <!-- Importação de Bibliotecas via CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Ícones Lucide React -->
+    <script src="https://unpkg.com/lucide-react@0.292.0/dist/umd/lucide-react.min.js"></script>
     
-    setIsCorrect(correct);
-    setGameState(STATES.RESULT);
-  }, [userInput, targetNumber, score, bestScore, difficulty, gameMode, timeLeft, playSound, startRound]);
+    <style>
+        body { background-color: #030712; margin: 0; padding: 0; overscroll-behavior: none; }
+        /* Esconde a barra de scroll */
+        ::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
 
-  const handleKeyPress = useCallback((key) => {
-    if (gameState !== STATES.INPUT && gameState !== STATES.PREVIEW) return;
-    playSound('tap');
-    if (gameState === STATES.PREVIEW) return; 
+    <!-- O CÓDIGO DO JOGO -->
+    <script type="text/babel">
+        const { useState, useEffect, useCallback, useRef } = React;
+        const { Delete, Check, RotateCcw, Home, Play, Trophy, Info, X, Flame, ShoppingCart, Download, Timer, ArrowLeftRight, Coins, Lock, Unlock, Eye, Palette, Music, Globe, Skull } = lucideReact;
 
-    if (key === 'backspace') setUserInput((prev) => prev.slice(0, -1));
-    else if (key === 'submit') { if (userInput.length > 0) checkResult(); }
-    else { if (userInput.length < difficulty) setUserInput((prev) => prev + key); }
-  }, [gameState, userInput.length, difficulty, checkResult, playSound]);
+        const STATES = { MENU: 'MENU', STORE: 'STORE', PREVIEW: 'PREVIEW', LEADERBOARD: 'LEADERBOARD', READY: 'READY', MEMORIZE: 'MEMORIZE', INPUT: 'INPUT', RESULT: 'RESULT' };
+        const MODES = { CLASSIC: 'CLASSIC', REVERSE: 'REVERSE', TIME_ATTACK: 'TIME_ATTACK', EXTREME: 'EXTREME' };
 
-  const handleReturnToMenu = () => { setScore(0); setGameState(STATES.MENU); };
+        const THEMES = {
+          classic: { id: 'classic', name: 'Clássico iOS', cost: 0, bg: 'bg-gray-950', card: 'bg-gray-900', border: 'border-gray-800', text: 'text-white', muted: 'text-gray-400', primary: 'bg-blue-600', primaryActive: 'active:bg-blue-700', highlight: 'text-blue-400', btnText: 'text-white' },
+          neon: { id: 'neon', name: 'Matrix Néon', cost: 50, bg: 'bg-black', card: 'bg-gray-900', border: 'border-green-500/50', text: 'text-green-400', muted: 'text-green-700', primary: 'bg-green-600 shadow-[0_0_15px_#16a34a]', primaryActive: 'active:bg-green-700', highlight: 'text-green-300', btnText: 'text-black font-black' },
+          dracula: { id: 'dracula', name: 'Noite Drácula', cost: 100, bg: 'bg-[#282a36]', card: 'bg-[#44475a]', border: 'border-[#6272a4]', text: 'text-[#f8f8f2]', muted: 'text-[#6272a4]', primary: 'bg-[#ff79c6] shadow-[0_0_10px_rgba(255,121,198,0.4)]', primaryActive: 'active:bg-[#bd93f9]', highlight: 'text-[#8be9fd]', btnText: 'text-[#282a36] font-bold' },
+          ocean: { id: 'ocean', name: 'Profundezas', cost: 120, bg: 'bg-slate-950', card: 'bg-blue-950', border: 'border-cyan-800', text: 'text-cyan-50', muted: 'text-cyan-600', primary: 'bg-teal-500', primaryActive: 'active:bg-teal-600', highlight: 'text-teal-300', btnText: 'text-slate-950 font-black' },
+          cyberpunk: { id: 'cyberpunk', name: 'Cyberpunk', cost: 150, bg: 'bg-yellow-400', card: 'bg-zinc-900', border: 'border-cyan-400 border-2', text: 'text-cyan-400', muted: 'text-zinc-500', primary: 'bg-pink-600 shadow-[4px_4px_0px_#000]', primaryActive: 'active:translate-y-1 active:shadow-[0px_0px_0px_#000]', highlight: 'text-pink-500', btnText: 'text-white font-black uppercase' },
+          sunset: { id: 'sunset', name: 'Pôr do Sol Retro', cost: 200, bg: 'bg-[#1a0b2e]', card: 'bg-[#2d1b4e]', border: 'border-[#f72585]', text: 'text-[#fba300]', muted: 'text-[#b5179e]', primary: 'bg-gradient-to-r from-[#f72585] to-[#4361ee]', primaryActive: 'active:opacity-80', highlight: 'text-[#4cc9f0]', btnText: 'text-white font-bold' }
+        };
 
-  const Numpad = ({ isPreview = false }) => (
-    <div className="grid grid-cols-3 gap-3 w-full max-w-xs mx-auto mt-8">
-      {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
-        <button key={num} onClick={() => handleKeyPress(num.toString())} className={`${theme.card} ${theme.border} active:scale-95 ${theme.text} text-3xl font-semibold py-4 rounded-2xl shadow-sm transition-all touch-manipulation flex items-center justify-center h-20 ${isPreview ? 'opacity-80' : ''}`}>
-          {num}
-        </button>
-      ))}
-      <button onClick={() => handleKeyPress('backspace')} className={`${theme.card} ${theme.border} border-red-900/40 active:scale-95 text-red-500 py-4 rounded-2xl shadow-sm transition-all touch-manipulation flex items-center justify-center h-20 ${isPreview ? 'opacity-80' : ''}`}>
-        <Delete size={32} />
-      </button>
-      <button onClick={() => handleKeyPress('0')} className={`${theme.card} ${theme.border} active:scale-95 ${theme.text} text-3xl font-semibold py-4 rounded-2xl shadow-sm transition-all touch-manipulation flex items-center justify-center h-20 ${isPreview ? 'opacity-80' : ''}`}>
-        0
-      </button>
-      <button onClick={() => handleKeyPress('submit')} disabled={!isPreview && userInput.length === 0} className={`py-4 rounded-2xl shadow-sm transition-all touch-manipulation flex items-center justify-center h-20 active:scale-95 ${isPreview || userInput.length > 0 ? `${theme.primary} ${theme.primaryActive} ${theme.btnText}` : `${theme.card} ${theme.muted} cursor-not-allowed opacity-50`}`}>
-        <Check size={32} strokeWidth={3} />
-      </button>
-    </div>
-  );
+        const SOUND_PACKS = {
+          classic: { id: 'classic', name: 'Bip Padrão', cost: 0, desc: 'Sons limpos e mecânicos' },
+          retro: { id: 'retro', name: 'Arcade 8-bit', cost: 100, desc: 'Nostalgia dos anos 80' },
+          scifi: { id: 'scifi', name: 'Ficção Científica', cost: 150, desc: 'Lasers e hologramas' }
+        };
 
-  return (
-    <div className={`min-h-screen ${theme.bg} ${theme.text} flex flex-col items-center justify-center p-4 font-sans select-none overscroll-none relative transition-colors duration-500`}>
-      
-      {/* HEADER EM JOGO */}
-      {[STATES.READY, STATES.MEMORIZE, STATES.INPUT, STATES.RESULT, STATES.PREVIEW].includes(gameState) && (
-        <div className="absolute top-8 left-0 right-0 flex justify-between px-6 items-start z-10">
-          <button onClick={() => gameState === STATES.PREVIEW ? setGameState(STATES.STORE) : handleReturnToMenu()} className={`p-2 ${theme.card} ${theme.border} rounded-full ${theme.muted} hover:${theme.text} transition active:scale-90`}>
-            {gameState === STATES.PREVIEW ? <X size={20} /> : <Home size={20} />}
-          </button>
+        function App() {
+          const [gameState, setGameState] = useState(STATES.MENU);
+          const [difficulty, setDifficulty] = useState(4);
+          const [gameMode, setGameMode] = useState(MODES.CLASSIC);
+          const [storeTab, setStoreTab] = useState('themes');
           
-          {gameMode === MODES.TIME_ATTACK && gameState !== STATES.PREVIEW && (
-            <div className={`font-mono text-2xl font-bold ${timeLeft <= 10 ? 'text-red-500 animate-pulse' : theme.text}`}>
-              00:{timeLeft.toString().padStart(2, '0')}
-            </div>
-          )}
-
-          <div className="flex flex-col items-end">
-            <div className={`${theme.card} ${theme.border} ${theme.muted} font-medium text-sm flex items-center gap-1 px-3 py-1 rounded-full`}>
-              <Trophy size={14} className="text-yellow-500"/> {gameState === STATES.PREVIEW ? '99' : bestScore}
-            </div>
-            <div className={`mt-2 font-medium tracking-wide flex items-center gap-1 transition-all duration-300 ${score >= 3 && gameMode !== MODES.TIME_ATTACK ? 'text-orange-400 animate-pulse' : theme.text}`}>
-              {(score >= 3 || gameState === STATES.PREVIEW) && gameMode !== MODES.TIME_ATTACK && <Flame size={18} className="text-orange-500" />}
-              <span className={`font-bold text-xl ${(score >= 3 || gameState === STATES.PREVIEW) && gameMode !== MODES.TIME_ATTACK ? 'text-orange-500' : theme.highlight}`}>{gameState === STATES.PREVIEW ? '12' : score}</span> pts
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ECRÃ DE MENU */}
-      {gameState === STATES.MENU && (
-        <div className="w-full max-w-sm flex flex-col items-center animate-in fade-in zoom-in duration-300 pb-10 mt-8">
+          const [targetNumber, setTargetNumber] = useState('');
+          const [userInput, setUserInput] = useState('');
+          const [score, setScore] = useState(0);
+          const [bestScore, setBestScore] = useState(0);
+          const [isCorrect, setIsCorrect] = useState(false);
+          const [timeLeft, setTimeLeft] = useState(60); 
+          const [distractions, setDistractions] = useState([]);
           
-          <div className="w-full flex justify-between items-center mb-8 px-2">
-            <div className={`flex items-center gap-2 ${theme.card} ${theme.border} px-4 py-2 rounded-full shadow-sm`}>
-              <Coins size={18} className="text-yellow-400" />
-              <span className="font-bold text-yellow-400">{coins}</span>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => { playSound('tap'); setGameState(STATES.LEADERBOARD); }} className={`p-3 ${theme.card} ${theme.border} rounded-full ${theme.text} active:scale-90 transition-all`}>
-                <Globe size={20} className="text-blue-400" />
-              </button>
-              <button onClick={() => { playSound('tap'); setGameState(STATES.STORE); }} className={`p-3 ${theme.card} ${theme.border} rounded-full ${theme.text} active:scale-90 transition-all`}>
-                <ShoppingCart size={20} />
-              </button>
-            </div>
-          </div>
-
-          <div className={`${theme.primary} p-4 rounded-3xl mb-6 shadow-lg`}>
-            <Play size={48} className={theme.btnText} fill="currentColor" />
-          </div>
-          <h1 className="text-4xl font-extrabold mb-2 text-center tracking-tight">Memória Rápida</h1>
+          const [coins, setCoins] = useState(() => parseInt(localStorage.getItem('memory-coins') || '0'));
           
-          {/* Seletor de Modo de Jogo */}
-          <div className={`grid grid-cols-2 gap-2 w-full p-2 ${theme.card} ${theme.border} rounded-2xl mb-8`}>
-            <button onClick={() => { playSound('tap'); setGameMode(MODES.CLASSIC); }} className={`py-3 text-xs sm:text-sm font-bold rounded-xl flex items-center justify-center gap-2 transition-all ${gameMode === MODES.CLASSIC ? `${theme.primary} ${theme.btnText}` : theme.muted}`}><Play size={16}/> Clássico</button>
-            <button onClick={() => { playSound('tap'); setGameMode(MODES.REVERSE); }} className={`py-3 text-xs sm:text-sm font-bold rounded-xl flex items-center justify-center gap-2 transition-all ${gameMode === MODES.REVERSE ? `${theme.primary} ${theme.btnText}` : theme.muted}`}><ArrowLeftRight size={16}/> Reverso</button>
-            <button onClick={() => { playSound('tap'); setGameMode(MODES.TIME_ATTACK); }} className={`py-3 text-xs sm:text-sm font-bold rounded-xl flex items-center justify-center gap-2 transition-all ${gameMode === MODES.TIME_ATTACK ? `${theme.primary} ${theme.btnText}` : theme.muted}`}><Timer size={16}/> 60 Seg</button>
-            <button onClick={() => { playSound('tap'); setGameMode(MODES.EXTREME); }} className={`py-3 text-xs sm:text-sm font-bold rounded-xl flex items-center justify-center gap-2 transition-all ${gameMode === MODES.EXTREME ? `bg-red-600 text-white shadow-[0_0_10px_red]` : theme.muted}`}><Skull size={16}/> Extremo</button>
-          </div>
+          const [unlockedThemes, setUnlockedThemes] = useState(() => JSON.parse(localStorage.getItem('memory-themes') || '["classic"]'));
+          const [activeTheme, setActiveTheme] = useState(() => localStorage.getItem('memory-active-theme') || 'classic');
+          const [previewThemeId, setPreviewThemeId] = useState(null); 
           
-          <div className="w-full space-y-3">
-            {[ { digits: 4, label: 'Fácil' }, { digits: 5, label: 'Médio' }, { digits: 6, label: 'Difícil' } ].map((level) => (
-              <button key={level.digits} onClick={() => { playSound('tap'); setDifficulty(level.digits); startRound(true); }} className={`w-full flex items-center justify-between p-4 rounded-2xl transition-all active:scale-95 group ${theme.card} border-2 ${difficulty === level.digits ? `border-current ${theme.highlight}` : 'border-transparent'}`}>
-                <div className="text-left"><div className="font-bold text-lg">{level.label} ({level.digits} dígitos)</div></div>
-                <div className="text-right">
-                  <div className="text-[10px] uppercase font-bold text-yellow-500">Recorde</div>
-                  <div className="font-bold text-sm">{localStorage.getItem(`memory-best-${gameMode}-${level.digits}`) || 0}</div>
-                </div>
-              </button>
-            ))}
-          </div>
+          const [unlockedSounds, setUnlockedSounds] = useState(() => JSON.parse(localStorage.getItem('memory-sounds') || '["classic"]'));
+          const [activeSoundPack, setActiveSoundPack] = useState(() => localStorage.getItem('memory-active-sound') || 'classic');
 
-          <button onClick={() => handleInstallPWA()} className={`mt-8 flex items-center gap-2 ${theme.muted} hover:${theme.text} text-sm font-medium transition-colors`}>
-             <Download size={16} /> Instalar Aplicação
-          </button>
-        </div>
-      )}
+          const [deferredPrompt, setDeferredPrompt] = useState(null);
+          const audioCtxRef = useRef(null);
 
-      {/* ECRÃ DE LOJA (STORE - EXPANDIDA) */}
-      {gameState === STATES.STORE && (
-        <div className="w-full max-w-md flex flex-col items-center animate-in fade-in duration-300 pb-10">
-          <div className="w-full flex justify-between items-center mb-6 px-2">
-             <button onClick={() => { playSound('tap'); setGameState(STATES.MENU); }} className={`p-2 ${theme.card} rounded-full`}><X size={24} /></button>
-             <h2 className="text-2xl font-bold">Loja</h2>
-             <div className="flex items-center gap-1 bg-yellow-400/20 px-3 py-1 rounded-full text-yellow-400 font-bold">{coins} <Coins size={16} /></div>
-          </div>
+          const currentThemeId = gameState === STATES.PREVIEW && previewThemeId ? previewThemeId : activeTheme;
+          const theme = THEMES[currentThemeId] || THEMES.classic;
 
-          <div className={`flex w-full p-1 ${theme.card} ${theme.border} rounded-2xl mb-6`}>
-            <button onClick={() => { playSound('tap'); setStoreTab('themes'); }} className={`flex-1 py-2 font-bold rounded-xl flex items-center justify-center gap-2 ${storeTab === 'themes' ? 'bg-blue-600 text-white' : theme.muted}`}><Palette size={18}/> Temas</button>
-            <button onClick={() => { playSound('tap'); setStoreTab('sounds'); }} className={`flex-1 py-2 font-bold rounded-xl flex items-center justify-center gap-2 ${storeTab === 'sounds' ? 'bg-blue-600 text-white' : theme.muted}`}><Music size={18}/> Sons</button>
-          </div>
+          useEffect(() => {
+            window.addEventListener('beforeinstallprompt', (e) => {
+              e.preventDefault();
+              setDeferredPrompt(e);
+            });
+          }, []);
 
-          <div className="w-full space-y-4 px-2 overflow-y-auto" style={{maxHeight: '65vh'}}>
-            {storeTab === 'themes' && Object.values(THEMES).map((t) => {
-              const isUnlocked = unlockedThemes.includes(t.id);
-              const isActive = activeTheme === t.id;
-              return (
-                <div key={t.id} className={`w-full p-4 rounded-3xl border-2 ${isActive ? 'border-green-500' : 'border-gray-800'} bg-gray-900 flex flex-col`}>
-                  <div className="flex justify-between items-center mb-4">
-                    <div className="flex items-center gap-3">
-                       <div className={`w-10 h-10 rounded-full border-2 border-white/20 flex items-center justify-center ${t.primary}`}><span className={`${t.btnText} text-xs font-black`}>Ab</span></div>
-                       <div><h3 className="font-bold text-lg text-white">{t.name}</h3>{!isUnlocked && <p className="text-yellow-400 text-sm font-medium flex items-center gap-1"><Coins size={14}/> {t.cost}</p>}</div>
-                    </div>
-                    {isActive && <span className="bg-green-500 text-black text-xs font-bold px-2 py-1 rounded-md">EM USO</span>}
-                  </div>
-                  <div className="flex gap-2 mt-2">
-                    <button onClick={() => openPreview(t.id)} className="flex-1 py-3 rounded-xl font-bold transition-all flex justify-center items-center gap-2 bg-gray-800 hover:bg-gray-700 text-white active:scale-95"><Eye size={18} /> Ver</button>
-                    {isUnlocked ? (
-                      <button disabled={isActive} onClick={() => equipItem('theme', t.id)} className={`flex-[2] py-3 rounded-xl font-bold transition-all ${isActive ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-blue-600 active:bg-blue-700 text-white active:scale-95'}`}>{isActive ? 'Equipado' : 'Equipar'}</button>
-                    ) : (
-                      <button onClick={() => buyItem('theme', t.id, t.cost)} className={`flex-[2] py-3 rounded-xl font-bold transition-all flex justify-center items-center gap-2 active:scale-95 ${coins >= t.cost ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-gray-500 cursor-not-allowed'}`}>{coins >= t.cost ? <><Unlock size={18}/> Comprar</> : <Lock size={18}/>}</button>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
+          useEffect(() => {
+            const saved = localStorage.getItem(`memory-best-${gameMode}-${difficulty}`);
+            setBestScore(saved ? parseInt(saved, 10) : 0);
+          }, [difficulty, gameMode]);
 
-            {storeTab === 'sounds' && Object.values(SOUND_PACKS).map((s) => {
-              const isUnlocked = unlockedSounds.includes(s.id);
-              const isActive = activeSoundPack === s.id;
-              return (
-                <div key={s.id} className={`w-full p-4 rounded-3xl border-2 ${isActive ? 'border-purple-500' : 'border-gray-800'} bg-gray-900 flex flex-col`}>
-                  <div className="flex justify-between items-center mb-4">
-                    <div className="flex items-center gap-3">
-                       <div className="w-10 h-10 rounded-full border-2 border-gray-700 bg-gray-800 flex items-center justify-center text-purple-400"><Music size={18}/></div>
-                       <div>
-                         <h3 className="font-bold text-lg text-white">{s.name}</h3>
-                         <p className="text-gray-400 text-xs">{s.desc}</p>
-                         {!isUnlocked && <p className="text-yellow-400 text-sm font-medium flex items-center gap-1 mt-1"><Coins size={14}/> {s.cost}</p>}
-                       </div>
-                    </div>
-                    {isActive && <span className="bg-purple-500 text-white text-xs font-bold px-2 py-1 rounded-md">ATIVO</span>}
-                  </div>
-                  {isUnlocked ? (
-                    <button disabled={isActive} onClick={() => equipItem('sound', s.id)} className={`w-full py-3 rounded-xl font-bold transition-all ${isActive ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-blue-600 active:bg-blue-700 text-white active:scale-95'}`}>{isActive ? 'Selecionado' : 'Selecionar Som'}</button>
-                  ) : (
-                    <button onClick={() => buyItem('sound', s.id, s.cost)} className={`w-full py-3 rounded-xl font-bold transition-all flex justify-center items-center gap-2 active:scale-95 ${coins >= s.cost ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-gray-500 cursor-not-allowed'}`}>{coins >= s.cost ? <><Unlock size={18}/> Comprar</> : <Lock size={18}/>}</button>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
+          const playSound = useCallback((type) => {
+            try {
+              if (!audioCtxRef.current) {
+                audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+              }
+              const ctx = audioCtxRef.current;
+              if (ctx.state === 'suspended') ctx.resume();
 
-      {/* ECRÃ DE PRÉ-VISUALIZAÇÃO */}
-      {gameState === STATES.PREVIEW && previewThemeId && (
-        <div className="w-full max-w-sm flex flex-col items-center animate-in slide-in-from-bottom-8 duration-300 relative h-full justify-center">
-          <h2 className={`text-xl mb-6 font-medium ${theme.muted}`}>A pré-visualizar</h2>
-          <div className="flex justify-center gap-2 mb-4 w-full px-4">
-            {['4', '0', '9', ''].map((char, i) => (
-              <div key={i} className={`h-16 flex-1 flex items-center justify-center text-4xl font-bold rounded-xl border-b-4 ${char ? `border-current ${theme.highlight} ${theme.card} shadow-inner` : `${theme.border}`}`}>{char}</div>
-            ))}
-          </div>
-          <Numpad isPreview={true} />
-          <div className={`absolute bottom-4 left-4 right-4 ${theme.card} ${theme.border} border-2 rounded-3xl p-4 shadow-2xl flex items-center justify-between`}>
-             <div className="flex flex-col"><span className="text-xs font-bold uppercase opacity-70">Tema</span><span className="font-black text-lg">{THEMES[previewThemeId].name}</span></div>
-             <button onClick={() => buyItem('theme', previewThemeId, THEMES[previewThemeId].cost)} className={`px-6 py-3 rounded-xl font-bold flex items-center gap-2 active:scale-95 ${coins >= THEMES[previewThemeId].cost ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-gray-500'}`}>{coins >= THEMES[previewThemeId].cost ? <><Unlock size={18}/> {THEMES[previewThemeId].cost}</> : <><Lock size={18}/> {THEMES[previewThemeId].cost}</>}</button>
-          </div>
-        </div>
-      )}
+              const osc = ctx.createOscillator();
+              const gain = ctx.createGain();
+              osc.connect(gain);
+              gain.connect(ctx.destination);
+              const now = ctx.currentTime;
 
-      {/* MÁSCARA DA TABELA DE LÍDERES (LEADERBOARD) */}
-      {gameState === STATES.LEADERBOARD && (
-        <div className="w-full max-w-md flex flex-col items-center animate-in fade-in duration-300 pb-10">
-          <div className="w-full flex justify-between items-center mb-8 px-2">
-             <button onClick={() => { playSound('tap'); setGameState(STATES.MENU); }} className={`p-2 ${theme.card} rounded-full`}><X size={24} /></button>
-             <h2 className="text-2xl font-bold flex items-center gap-2"><Globe className="text-blue-400"/> Ranking Global</h2>
-             <div className="w-10"></div> {/* Spacer */}
-          </div>
+              if (activeSoundPack === 'retro') {
+                osc.type = 'square';
+                if (type === 'tap') { osc.frequency.setValueAtTime(600, now); gain.gain.setValueAtTime(0.08, now); osc.start(now); osc.stop(now + 0.08); }
+                else if (type === 'success') { osc.frequency.setValueAtTime(400, now); osc.frequency.setValueAtTime(600, now + 0.1); gain.gain.setValueAtTime(0.1, now); osc.start(now); osc.stop(now + 0.2); }
+                else if (type === 'error') { osc.frequency.setValueAtTime(150, now); gain.gain.setValueAtTime(0.1, now); osc.start(now); osc.stop(now + 0.3); }
+              } 
+              else if (activeSoundPack === 'scifi') {
+                if (type === 'tap') { osc.type = 'sine'; osc.frequency.setValueAtTime(1200, now); osc.frequency.exponentialRampToValueAtTime(400, now + 0.1); gain.gain.setValueAtTime(0.1, now); osc.start(now); osc.stop(now + 0.1); }
+                else if (type === 'success') { osc.type = 'triangle'; osc.frequency.setValueAtTime(800, now); osc.frequency.linearRampToValueAtTime(1600, now + 0.2); gain.gain.setValueAtTime(0.1, now); osc.start(now); osc.stop(now + 0.2); }
+                else if (type === 'error') { osc.type = 'sawtooth'; osc.frequency.setValueAtTime(200, now); osc.frequency.linearRampToValueAtTime(50, now + 0.4); gain.gain.setValueAtTime(0.1, now); osc.start(now); osc.stop(now + 0.4); }
+              } 
+              else {
+                if (type === 'tap') { osc.type = 'sine'; osc.frequency.setValueAtTime(800, now); gain.gain.setValueAtTime(0.1, now); osc.start(now); osc.stop(now + 0.05); }
+                else if (type === 'success') { osc.type = 'square'; osc.frequency.setValueAtTime(400, now); osc.frequency.exponentialRampToValueAtTime(1000, now + 0.1); gain.gain.setValueAtTime(0.1, now); osc.start(now); osc.stop(now + 0.15); }
+                else if (type === 'error') { osc.type = 'sawtooth'; osc.frequency.setValueAtTime(300, now); osc.frequency.exponentialRampToValueAtTime(100, now + 0.3); gain.gain.setValueAtTime(0.1, now); osc.start(now); osc.stop(now + 0.3); }
+              }
+            } catch (e) {}
 
-          <div className="relative w-full rounded-3xl overflow-hidden bg-gray-900 border border-gray-800 p-2">
-            {/* Aviso Flutuante (Em Breve) */}
-            <div className="absolute inset-0 bg-gray-950/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center p-6 text-center">
-              <Lock size={48} className="text-blue-500 mb-4" />
-              <h3 className="text-2xl font-black text-white mb-2">Em Breve</h3>
-              <p className="text-gray-400 mb-6">Estamos a preparar os servidores para a tabela de líderes global. Prepara os teus reflexos!</p>
-              <button onClick={() => setGameState(STATES.MENU)} className="bg-blue-600 text-white font-bold py-3 px-8 rounded-xl active:scale-95 transition-all">
-                Voltar ao Menu
-              </button>
-            </div>
+            if (navigator.vibrate) {
+              if (type === 'tap') navigator.vibrate(10);
+              else if (type === 'success') navigator.vibrate([30, 50, 30]);
+              else if (type === 'error') navigator.vibrate([50, 50, 50]);
+            }
+          }, [activeSoundPack]);
 
-            {/* Dados Mock (Ocultos sob o blur) */}
-            <div className="opacity-50 pointer-events-none p-4 space-y-4">
-              <div className="flex justify-between text-xs text-gray-500 font-bold uppercase px-2"><span>Jogador</span><span>Pontuação</span></div>
-              {[ {n: 'ShadowNinja', p: 42}, {n: 'MariaPT', p: 38}, {n: 'Guest_882', p: 31}, {n: 'TiagoFast', p: 29}, {n: 'Tu (Local)', p: bestScore} ].map((user, i) => (
-                <div key={i} className={`flex justify-between items-center p-3 rounded-xl ${i === 4 ? 'bg-blue-900/40 border border-blue-500/50' : 'bg-gray-800'}`}>
-                  <div className="flex items-center gap-3">
-                    <span className={`font-bold ${i === 0 ? 'text-yellow-400' : i === 1 ? 'text-gray-300' : i === 2 ? 'text-amber-600' : 'text-gray-500'}`}>#{i+1}</span>
-                    <span className="text-white font-medium">{user.n}</span>
-                  </div>
-                  <span className="font-mono text-blue-400 font-bold">{user.p} pts</span>
-                </div>
+          const handleInstallPWA = async () => {
+            if (deferredPrompt) {
+              deferredPrompt.prompt();
+              const { outcome } = await deferredPrompt.userChoice;
+              if (outcome === 'accepted') setDeferredPrompt(null);
+            } else { alert("Para instalar no iOS: Toque no botão 'Partilhar' no Safari e depois em 'Adicionar ao Ecrã Principal'."); }
+          };
+
+          const buyItem = (type, id, cost) => {
+            if (coins >= cost) {
+              const newCoins = coins - cost;
+              setCoins(newCoins);
+              localStorage.setItem('memory-coins', newCoins);
+              playSound('success');
+              
+              if (type === 'theme') {
+                const newUnlocked = [...unlockedThemes, id];
+                setUnlockedThemes(newUnlocked);
+                localStorage.setItem('memory-themes', JSON.stringify(newUnlocked));
+                setActiveTheme(id);
+                localStorage.setItem('memory-active-theme', id);
+                if (gameState === STATES.PREVIEW) setGameState(STATES.STORE);
+              } else if (type === 'sound') {
+                const newUnlocked = [...unlockedSounds, id];
+                setUnlockedSounds(newUnlocked);
+                localStorage.setItem('memory-sounds', JSON.stringify(newUnlocked));
+                setActiveSoundPack(id);
+                localStorage.setItem('memory-active-sound', id);
+              }
+            } else playSound('error');
+          };
+
+          const equipItem = (type, id) => {
+            playSound('tap');
+            if (type === 'theme') { setActiveTheme(id); localStorage.setItem('memory-active-theme', id); } 
+            else if (type === 'sound') { setActiveSoundPack(id); localStorage.setItem('memory-active-sound', id); }
+          };
+
+          const openPreview = (themeId) => { playSound('tap'); setPreviewThemeId(themeId); setGameState(STATES.PREVIEW); };
+
+          const generateNumber = useCallback((digits) => {
+            const min = Math.pow(10, digits - 1);
+            const max = Math.pow(10, digits) - 1;
+            return Math.floor(Math.random() * (max - min + 1) + min).toString();
+          }, []);
+
+          const generateDistractions = useCallback(() => {
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%';
+            const numDistractions = difficulty * 2;
+            const dist = [];
+            for (let i = 0; i < numDistractions; i++) {
+              dist.push({
+                id: i,
+                char: chars.charAt(Math.floor(Math.random() * chars.length)),
+                top: `${Math.random() * 80 + 10}%`,
+                left: `${Math.random() * 80 + 10}%`,
+                scale: Math.random() * 1.5 + 0.5,
+                opacity: Math.random() * 0.5 + 0.2,
+              });
+            }
+            return dist;
+          }, [difficulty]);
+
+          const startRound = useCallback((resetScore = false) => {
+            if (resetScore) {
+              setScore(0);
+              if (gameMode === MODES.TIME_ATTACK) setTimeLeft(60);
+            }
+            setTargetNumber(generateNumber(difficulty));
+            if (gameMode === MODES.EXTREME) setDistractions(generateDistractions());
+            setUserInput('');
+            setGameState(STATES.READY);
+          }, [difficulty, gameMode, generateNumber, generateDistractions]);
+
+          useEffect(() => {
+            if (gameMode !== MODES.TIME_ATTACK || ![STATES.READY, STATES.MEMORIZE, STATES.INPUT].includes(gameState)) return;
+            if (timeLeft <= 0) { setIsCorrect(false); setGameState(STATES.RESULT); playSound('error'); return; }
+            const timer = setInterval(() => setTimeLeft(t => t - 1), 1000);
+            return () => clearInterval(timer);
+          }, [gameMode, gameState, timeLeft, playSound]);
+
+          useEffect(() => {
+            let timer;
+            if (gameState === STATES.READY) {
+              timer = setTimeout(() => setGameState(STATES.MEMORIZE), 800);
+            } else if (gameState === STATES.MEMORIZE) {
+              const baseTime = difficulty * 50 + 150;
+              const progressiveTime = Math.max(baseTime - (score * 5), gameMode === MODES.EXTREME ? 250 : 100); 
+              timer = setTimeout(() => setGameState(STATES.INPUT), progressiveTime);
+            }
+            return () => clearTimeout(timer);
+          }, [gameState, difficulty, score, gameMode]);
+
+          useEffect(() => {
+            if (gameState === STATES.INPUT && userInput.length === difficulty) {
+              const autoSubmitTimer = setTimeout(() => checkResult(), 150);
+              return () => clearTimeout(autoSubmitTimer);
+            }
+          }, [userInput, gameState, difficulty]);
+
+          const checkResult = useCallback(() => {
+            const expectedAnswer = gameMode === MODES.REVERSE ? targetNumber.split('').reverse().join('') : targetNumber;
+            const correct = userInput === expectedAnswer;
+            
+            if (correct) {
+              playSound('success');
+              const newScore = score + 1;
+              setScore(newScore);
+              
+              let coinsEarned = difficulty;
+              if (gameMode === MODES.REVERSE) coinsEarned += 2;
+              if (gameMode === MODES.EXTREME) coinsEarned += 4;
+              
+              setCoins(c => {
+                const nc = c + coinsEarned;
+                localStorage.setItem('memory-coins', nc);
+                return nc;
+              });
+
+              if (newScore > bestScore) {
+                setBestScore(newScore);
+                localStorage.setItem(`memory-best-${gameMode}-${difficulty}`, newScore.toString());
+              }
+              
+              if (gameMode === MODES.TIME_ATTACK && timeLeft > 0) { startRound(false); return; }
+            } else playSound('error');
+            
+            setIsCorrect(correct);
+            setGameState(STATES.RESULT);
+          }, [userInput, targetNumber, score, bestScore, difficulty, gameMode, timeLeft, playSound, startRound]);
+
+          const handleKeyPress = useCallback((key) => {
+            if (gameState !== STATES.INPUT && gameState !== STATES.PREVIEW) return;
+            playSound('tap');
+            if (gameState === STATES.PREVIEW) return; 
+
+            if (key === 'backspace') setUserInput((prev) => prev.slice(0, -1));
+            else if (key === 'submit') { if (userInput.length > 0) checkResult(); }
+            else { if (userInput.length < difficulty) setUserInput((prev) => prev + key); }
+          }, [gameState, userInput.length, difficulty, checkResult, playSound]);
+
+          const handleReturnToMenu = () => { setScore(0); setGameState(STATES.MENU); };
+
+          const Numpad = ({ isPreview = false }) => (
+            <div className="grid grid-cols-3 gap-3 w-full max-w-xs mx-auto mt-8">
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
+                <button key={num} onClick={() => handleKeyPress(num.toString())} className={`${theme.card} ${theme.border} active:scale-95 ${theme.text} text-3xl font-semibold py-4 rounded-2xl shadow-sm transition-all touch-manipulation flex items-center justify-center h-20 ${isPreview ? 'opacity-80' : ''}`}>
+                  {num}
+                </button>
               ))}
+              <button onClick={() => handleKeyPress('backspace')} className={`${theme.card} ${theme.border} border-red-900/40 active:scale-95 text-red-500 py-4 rounded-2xl shadow-sm transition-all touch-manipulation flex items-center justify-center h-20 ${isPreview ? 'opacity-80' : ''}`}>
+                <Delete size={32} />
+              </button>
+              <button onClick={() => handleKeyPress('0')} className={`${theme.card} ${theme.border} active:scale-95 ${theme.text} text-3xl font-semibold py-4 rounded-2xl shadow-sm transition-all touch-manipulation flex items-center justify-center h-20 ${isPreview ? 'opacity-80' : ''}`}>
+                0
+              </button>
+              <button onClick={() => handleKeyPress('submit')} disabled={!isPreview && userInput.length === 0} className={`py-4 rounded-2xl shadow-sm transition-all touch-manipulation flex items-center justify-center h-20 active:scale-95 ${isPreview || userInput.length > 0 ? `${theme.primary} ${theme.primaryActive} ${theme.btnText}` : `${theme.card} ${theme.muted} cursor-not-allowed opacity-50`}`}>
+                <Check size={32} strokeWidth={3} />
+              </button>
             </div>
-          </div>
-        </div>
-      )}
+          );
 
-      {/* ECRÃS DE JOGO (Em Partida) */}
-      {gameState === STATES.READY && (
-        <div className="flex flex-col items-center animate-in fade-in zoom-in duration-200">
-          <div className={`w-16 h-16 border-4 ${theme.border} border-t-current rounded-full animate-spin mb-6 ${theme.highlight}`}></div>
-          <h2 className={`text-2xl font-bold tracking-widest uppercase ${theme.muted}`}>Atenção</h2>
-        </div>
-      )}
+          return (
+            <div className={`min-h-screen ${theme.bg} ${theme.text} flex flex-col items-center justify-center p-4 font-sans select-none overscroll-none relative transition-colors duration-500`}>
+              
+              {[STATES.READY, STATES.MEMORIZE, STATES.INPUT, STATES.RESULT, STATES.PREVIEW].includes(gameState) && (
+                <div className="absolute top-8 left-0 right-0 flex justify-between px-6 items-start z-10">
+                  <button onClick={() => gameState === STATES.PREVIEW ? setGameState(STATES.STORE) : handleReturnToMenu()} className={`p-2 ${theme.card} ${theme.border} rounded-full ${theme.muted} hover:${theme.text} transition active:scale-90`}>
+                    {gameState === STATES.PREVIEW ? <X size={20} /> : <Home size={20} />}
+                  </button>
+                  
+                  {gameMode === MODES.TIME_ATTACK && gameState !== STATES.PREVIEW && (
+                    <div className={`font-mono text-2xl font-bold ${timeLeft <= 10 ? 'text-red-500 animate-pulse' : theme.text}`}>
+                      00:{timeLeft.toString().padStart(2, '0')}
+                    </div>
+                  )}
 
-      {gameState === STATES.MEMORIZE && (
-        <div className="flex flex-col items-center justify-center w-full max-w-sm h-64 relative">
-          
-          {/* Distrações Visuais (Apenas no Modo Extremo) */}
-          {gameMode === MODES.EXTREME && distractions.map(dist => (
-            <div key={dist.id} style={{ top: dist.top, left: dist.left, transform: `scale(${dist.scale})`, opacity: dist.opacity }} className="absolute text-red-500 font-mono font-black animate-pulse blur-[1px] select-none pointer-events-none">
-              {dist.char}
-            </div>
-          ))}
-
-          <div className={`text-7xl sm:text-8xl font-black tracking-widest drop-shadow-[0_0_20px_rgba(255,255,255,0.3)] animate-in fade-in zoom-in-110 duration-100 ${theme.text} ${gameMode === MODES.EXTREME ? 'animate-bounce' : ''}`}>
-            {targetNumber}
-          </div>
-        </div>
-      )}
-
-      {gameState === STATES.INPUT && (
-        <div className="w-full max-w-sm flex flex-col items-center animate-in slide-in-from-bottom-8 duration-300">
-          <h2 className={`text-xl mb-6 font-medium text-center ${gameMode === MODES.REVERSE ? 'text-orange-400 animate-bounce' : gameMode === MODES.EXTREME ? 'text-red-500 font-bold uppercase tracking-widest' : theme.muted}`}>
-            {gameMode === MODES.REVERSE ? 'Digita de trás para a frente!' : gameMode === MODES.EXTREME ? 'Sobrevive!' : 'Qual era o número?'}
-          </h2>
-          <div className="flex justify-center gap-2 mb-4 w-full px-4">
-            {Array.from({ length: difficulty }).map((_, index) => (
-              <div key={index} className={`h-16 flex-1 flex items-center justify-center text-4xl font-bold rounded-xl border-b-4 transition-all ${userInput[index] ? `border-current ${theme.highlight} ${theme.card} shadow-inner` : `${theme.border}`}`}>{userInput[index] || ''}</div>
-            ))}
-          </div>
-          <Numpad />
-        </div>
-      )}
-
-      {gameState === STATES.RESULT && (
-        <div className="w-full max-w-sm flex flex-col items-center text-center animate-in fade-in zoom-in-95 duration-300 mt-8">
-          
-          {gameMode === MODES.TIME_ATTACK && timeLeft <= 0 ? (
-             <>
-                <div className="w-24 h-24 rounded-full flex items-center justify-center mb-6 bg-blue-500/20 text-blue-400"><Timer size={48} /></div>
-                <h2 className="text-3xl font-bold mb-2 text-blue-400">Tempo Esgotado!</h2>
-                <p className={`text-xl mb-8 ${theme.muted}`}>Obtiveste <strong className={theme.text}>{score} pontos</strong></p>
-             </>
-          ) : (
-             <>
-                <div className={`w-24 h-24 rounded-full flex items-center justify-center mb-6 shadow-lg relative ${isCorrect ? 'bg-green-500/20 text-green-500 shadow-green-500/20' : 'bg-red-500/20 text-red-500 shadow-red-500/20'}`}>
-                  {isCorrect ? <Check size={48} strokeWidth={3} /> : <Delete size={48} strokeWidth={3} />}
+                  <div className="flex flex-col items-end">
+                    <div className={`${theme.card} ${theme.border} ${theme.muted} font-medium text-sm flex items-center gap-1 px-3 py-1 rounded-full`}>
+                      <Trophy size={14} className="text-yellow-500"/> {gameState === STATES.PREVIEW ? '99' : bestScore}
+                    </div>
+                    <div className={`mt-2 font-medium tracking-wide flex items-center gap-1 transition-all duration-300 ${score >= 3 && gameMode !== MODES.TIME_ATTACK ? 'text-orange-400 animate-pulse' : theme.text}`}>
+                      {(score >= 3 || gameState === STATES.PREVIEW) && gameMode !== MODES.TIME_ATTACK && <Flame size={18} className="text-orange-500" />}
+                      <span className={`font-bold text-xl ${(score >= 3 || gameState === STATES.PREVIEW) && gameMode !== MODES.TIME_ATTACK ? 'text-orange-500' : theme.highlight}`}>{gameState === STATES.PREVIEW ? '12' : score}</span> pts
+                    </div>
+                  </div>
                 </div>
-                <h2 className={`text-3xl font-bold mb-6 ${isCorrect ? 'text-green-500' : 'text-red-500'}`}>{isCorrect ? 'Excelente!' : 'Não foi desta vez'}</h2>
-             </>
-          )}
+              )}
 
-          <div className={`${theme.card} ${theme.border} w-full rounded-2xl p-6 mb-6 space-y-4 shadow-inner`}>
-            <div className={`flex justify-between items-center border-b ${theme.border} pb-4`}><span className={`text-sm uppercase tracking-wider ${theme.muted}`}>Número real</span><span className="text-2xl font-bold tracking-widest">{targetNumber || '---'}</span></div>
-            {gameMode === MODES.REVERSE && targetNumber && (
-              <div className={`flex justify-between items-center border-b ${theme.border} pb-4 pt-2`}><span className={`text-sm uppercase tracking-wider ${theme.muted}`}>Invertido</span><span className="text-2xl font-bold tracking-widest text-orange-400">{targetNumber.split('').reverse().join('')}</span></div>
-            )}
-            <div className="flex justify-between items-center pt-2"><span className={`text-sm uppercase tracking-wider ${theme.muted}`}>A tua resposta</span><span className={`text-2xl font-bold tracking-widest ${isCorrect ? 'text-green-500' : 'text-red-500 line-through'}`}>{userInput || '---'}</span></div>
-          </div>
+              {gameState === STATES.MENU && (
+                <div className="w-full max-w-sm flex flex-col items-center animate-in fade-in zoom-in duration-300 pb-10 mt-8">
+                  <div className="w-full flex justify-between items-center mb-8 px-2">
+                    <div className={`flex items-center gap-2 ${theme.card} ${theme.border} px-4 py-2 rounded-full shadow-sm`}>
+                      <Coins size={18} className="text-yellow-400" />
+                      <span className="font-bold text-yellow-400">{coins}</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => { playSound('tap'); setGameState(STATES.LEADERBOARD); }} className={`p-3 ${theme.card} ${theme.border} rounded-full ${theme.text} active:scale-90 transition-all`}><Globe size={20} className="text-blue-400" /></button>
+                      <button onClick={() => { playSound('tap'); setGameState(STATES.STORE); }} className={`p-3 ${theme.card} ${theme.border} rounded-full ${theme.text} active:scale-90 transition-all`}><ShoppingCart size={20} /></button>
+                    </div>
+                  </div>
 
-          <button onClick={() => startRound(gameMode === MODES.TIME_ATTACK || !isCorrect)} className={`w-full font-bold py-4 px-8 rounded-2xl text-lg flex items-center justify-center gap-2 transition-all active:scale-95 touch-manipulation shadow-lg ${theme.primary} ${theme.primaryActive} ${theme.btnText}`}>
-            {gameMode === MODES.TIME_ATTACK && timeLeft <= 0 ? 'Jogar Novamente' : (isCorrect ? 'Próxima Ronda' : 'Tentar Novamente')}
-            <RotateCcw size={20} />
-          </button>
-        </div>
-      )}
-      
-    </div>
-  );
-}
+                  <div className={`${theme.primary} p-4 rounded-3xl mb-6 shadow-lg`}><Play size={48} className={theme.btnText} fill="currentColor" /></div>
+                  <h1 className="text-4xl font-extrabold mb-2 text-center tracking-tight">Memória Rápida</h1>
+                  
+                  <div className={`grid grid-cols-2 gap-2 w-full p-2 ${theme.card} ${theme.border} rounded-2xl mb-8`}>
+                    <button onClick={() => { playSound('tap'); setGameMode(MODES.CLASSIC); }} className={`py-3 text-xs sm:text-sm font-bold rounded-xl flex items-center justify-center gap-2 transition-all ${gameMode === MODES.CLASSIC ? `${theme.primary} ${theme.btnText}` : theme.muted}`}><Play size={16}/> Clássico</button>
+                    <button onClick={() => { playSound('tap'); setGameMode(MODES.REVERSE); }} className={`py-3 text-xs sm:text-sm font-bold rounded-xl flex items-center justify-center gap-2 transition-all ${gameMode === MODES.REVERSE ? `${theme.primary} ${theme.btnText}` : theme.muted}`}><ArrowLeftRight size={16}/> Reverso</button>
+                    <button onClick={() => { playSound('tap'); setGameMode(MODES.TIME_ATTACK); }} className={`py-3 text-xs sm:text-sm font-bold rounded-xl flex items-center justify-center gap-2 transition-all ${gameMode === MODES.TIME_ATTACK ? `${theme.primary} ${theme.btnText}` : theme.muted}`}><Timer size={16}/> 60 Seg</button>
+                    <button onClick={() => { playSound('tap'); setGameMode(MODES.EXTREME); }} className={`py-3 text-xs sm:text-sm font-bold rounded-xl flex items-center justify-center gap-2 transition-all ${gameMode === MODES.EXTREME ? `bg-red-600 text-white shadow-[0_0_10px_red]` : theme.muted}`}><Skull size={16}/> Extremo</button>
+                  </div>
+                  
+                  <div className="w-full space-y-3">
+                    {[ { digits: 4, label: 'Fácil' }, { digits: 5, label: 'Médio' }, { digits: 6, label: 'Difícil' } ].map((level) => (
+                      <button key={level.digits} onClick={() => { playSound('tap'); setDifficulty(level.digits); startRound(true); }} className={`w-full flex items-center justify-between p-4 rounded-2xl transition-all active:scale-95 group ${theme.card} border-2 ${difficulty === level.digits ? `border-current ${theme.highlight}` : 'border-transparent'}`}>
+                        <div className="text-left"><div className="font-bold text-lg">{level.label} ({level.digits} dígitos)</div></div>
+                        <div className="text-right">
+                          <div className="text-[10px] uppercase font-bold text-yellow-500">Recorde</div>
+                          <div className="font-bold text-sm">{localStorage.getItem(`memory-best-${gameMode}-${level.digits}`) || 0}</div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
 
+                  <button onClick={() => handleInstallPWA()} className={`mt-8 flex items-center gap-2 ${theme.muted} hover:${theme.text} text-sm font-medium transition-colors`}><Download size={16} /> Instalar Aplicação</button>
+                </div>
+              )}
+
+              {gameState === STATES.STORE && (
+                <div className="w-full max-w-md flex flex-col items-center animate-in fade-in duration-300 pb-10">
+                  <div className="w-full flex justify-between items-center mb-6 px-2">
+                     <button onClick={() => { playSound('tap'); setGameState(STATES.MENU); }} className={`p-2 ${theme.card} rounded-full`}><X size={24} /></button>
+                     <h2 className="text-2xl font-bold">Loja</h2>
+                     <div className="flex items-center gap-1 bg-yellow-400/20 px-3 py-1 rounded-full text-yellow-400 font-bold">{coins} <Coins size={16} /></div>
+                  </div>
+
+                  <div className={`flex w-full p-1 ${theme.card} ${theme.border} rounded-2xl mb-6`}>
+                    <button onClick={() => { playSound('tap'); setStoreTab('themes'); }} className={`flex-1 py-2 font-bold rounded-xl flex items-center justify-center gap-2 ${storeTab === 'themes' ? 'bg-blue-600 text-white' : theme.muted}`}><Palette size={18}/> Temas</button>
+                    <button onClick={() => { playSound('tap'); setStoreTab('sounds'); }} className={`flex-1 py-2 font-bold rounded-xl flex items-center justify-center gap-2 ${storeTab === 'sounds' ? 'bg-blue-600 text-white' : theme.muted}`}><Music size={18}/> Sons</button>
+                  </div>
+
+                  <div className="w-full space-y-4 px-2 overflow-y-auto" style={{maxHeight: '65vh'}}>
+                    {storeTab === 'themes' && Object.values(THEMES).map((t) => {
+                      const isUnlocked = unlockedThemes.includes(t.id);
+                      const isActive = activeTheme === t.id;
+                      return (
+                        <div key={t.id} className={`w-full p-4 rounded-3xl border-2 ${isActive ? 'border-green-500' : 'border-gray-800'} bg-gray-900 flex flex-col`}>
+                          <div className="flex justify-between items-center mb-4">
+                            <div className="flex items-center gap-3">
+                               <div className={`w-10 h-10 rounded-full border-2 border-white/20 flex items-center justify-center ${t.primary}`}><span className={`${t.btnText} text-xs font-black`}>Ab</span></div>
+                               <div><h3 className="font-bold text-lg text-white">{t.name}</h3>{!isUnlocked && <p className="text-yellow-400 text-sm font-medium flex items-center gap-1"><Coins size={14}/> {t.cost}</p>}</div>
+                            </div>
+                            {isActive && <span className="bg-green-500 text-black text-xs font-bold px-2 py-1 rounded-md">EM USO</span>}
+                          </div>
+                          <div className="flex gap-2 mt-2">
+                            <button onClick={() => openPreview(t.id)} className="flex-1 py-3 rounded-xl font-bold transition-all flex justify-center items-center gap-2 bg-gray-800 hover:bg-gray-700 text-white active:scale-95"><Eye size={18} /> Ver</button>
+                            {isUnlocked ? (
+                              <button disabled={isActive} onClick={() => equipItem('theme', t.id)} className={`flex-[2] py-3 rounded-xl font-bold transition-all ${isActive ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-blue-600 active:bg-blue-700 text-white active:scale-95'}`}>{isActive ? 'Equipado' : 'Equipar'}</button>
+                            ) : (
+                              <button onClick={() => buyItem('theme', t.id, t.cost)} className={`flex-[2] py-3 rounded-xl font-bold transition-all flex justify-center items-center gap-2 active:scale-95 ${coins >= t.cost ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-gray-500 cursor-not-allowed'}`}>{coins >= t.cost ? <><Unlock size={18}/> Comprar</> : <Lock size={18}/>}</button>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+
+                    {storeTab === 'sounds' && Object.values(SOUND_PACKS).map((s) => {
+                      const isUnlocked = unlockedSounds.includes(s.id);
+                      const isActive = activeSoundPack === s.id;
+                      return (
+                        <div key={s.id} className={`w-full p-4 rounded-3xl border-2 ${isActive ? 'border-purple-500' : 'border-gray-800'} bg-gray-900 flex flex-col`}>
+                          <div className="flex justify-between items-center mb-4">
+                            <div className="flex items-center gap-3">
+                               <div className="w-10 h-10 rounded-full border-2 border-gray-700 bg-gray-800 flex items-center justify-center text-purple-400"><Music size={18}/></div>
+                               <div><h3 className="font-bold text-lg text-white">{s.name}</h3><p className="text-gray-400 text-xs">{s.desc}</p>{!isUnlocked && <p className="text-yellow-400 text-sm font-medium flex items-center gap-1 mt-1"><Coins size={14}/> {s.cost}</p>}</div>
+                            </div>
+                            {isActive && <span className="bg-purple-500 text-white text-xs font-bold px-2 py-1 rounded-md">ATIVO</span>}
+                          </div>
+                          {isUnlocked ? (
+                            <button disabled={isActive} onClick={() => equipItem('sound', s.id)} className={`w-full py-3 rounded-xl font-bold transition-all ${isActive ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-blue-600 active:bg-blue-700 text-white active:scale-95'}`}>{isActive ? 'Selecionado' : 'Selecionar Som'}</button>
+                          ) : (
+                            <button onClick={() => buyItem('sound', s.id, s.cost)} className={`w-full py-3 rounded-xl font-bold transition-all flex justify-center items-center gap-2 active:scale-95 ${coins >= s.cost ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-gray-500 cursor-not-allowed'}`}>{coins >= s.cost ? <><Unlock size={18}/> Comprar</> : <Lock size={18}/>}</button>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {gameState === STATES.PREVIEW && previewThemeId && (
+                <div className="w-full max-w-sm flex flex-col items-center animate-in slide-in-from-bottom-8 duration-300 relative h-full justify-center">
+                  <h2 className={`text-xl mb-6 font-medium ${theme.muted}`}>A pré-visualizar</h2>
+                  <div className="flex justify-center gap-2 mb-4 w-full px-4">
+                    {['4', '0', '9', ''].map((char, i) => (
+                      <div key={i} className={`h-16 flex-1 flex items-center justify-center text-4xl font-bold rounded-xl border-b-4 ${char ? `border-current ${theme.highlight} ${theme.card} shadow-inner` : `${theme.border}`}`}>{char}</div>
+                    ))}
+                  </div>
+                  <Numpad isPreview={true} />
+                  <div className={`absolute bottom-4 left-4 right-4 ${theme.card} ${theme.border} border-2 rounded-3xl p-4 shadow-2xl flex items-center justify-between`}>
+                     <div className="flex flex-col"><span className="text-xs font-bold uppercase opacity-70">Tema</span><span className="font-black text-lg">{THEMES[previewThemeId].name}</span></div>
+                     <button onClick={() => buyItem('theme', previewThemeId, THEMES[previewThemeId].cost)} className={`px-6 py-3 rounded-xl font-bold flex items-center gap-2 active:scale-95 ${coins >= THEMES[previewThemeId].cost ? 'bg-yellow-500 text-black' : 'bg-gray-800 text-gray-500'}`}>{coins >= THEMES[previewThemeId].cost ? <><Unlock size={18}/> {THEMES[previewThemeId].cost}</> : <><Lock size={18}/> {THEMES[previewThemeId].cost}</>}</button>
+                  </div>
+                </div>
+              )}
+
+              {gameState === STATES.LEADERBOARD && (
+                <div className="w-full max-w-md flex flex-col items-center animate-in fade-in duration-300 pb-10">
+                  <div className="w-full flex justify-between items-center mb-8 px-2">
+                     <button onClick={() => { playSound('tap'); setGameState(STATES.MENU); }} className={`p-2 ${theme.card} rounded-full`}><X size={24} /></button>
+                     <h2 className="text-2xl font-bold flex items-center gap-2"><Globe className="text-blue-400"/> Ranking Global</h2>
+                     <div className="w-10"></div>
+                  </div>
+                  <div className="relative w-full rounded-3xl overflow-hidden bg-gray-900 border border-gray-800 p-2">
+                    <div className="absolute inset-0 bg-gray-950/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center p-6 text-center">
+                      <Lock size={48} className="text-blue-500 mb-4" />
+                      <h3 className="text-2xl font-black text-white mb-2">Em Breve</h3>
+                      <p className="text-gray-400 mb-6">A preparar servidores para a tabela global. Prepara os reflexos!</p>
+                      <button onClick={() => setGameState(STATES.MENU)} className="bg-blue-600 text-white font-bold py-3 px-8 rounded-xl active:scale-95 transition-all">Voltar ao Menu</button>
+                    </div>
+                    <div className="opacity-50 pointer-events-none p-4 space-y-4">
+                      <div className="flex justify-between text-xs text-gray-500 font-bold uppercase px-2"><span>Jogador</span><span>Pontuação</span></div>
+                      {[ {n: 'ShadowNinja', p: 42}, {n: 'MariaPT', p: 38}, {n: 'Guest_882', p: 31}, {n: 'TiagoFast', p: 29}, {n: 'Tu (Local)', p: bestScore} ].map((user, i) => (
+                        <div key={i} className={`flex justify-between items-center p-3 rounded-xl ${i === 4 ? 'bg-blue-900/40 border border-blue-500/50' : 'bg-gray-800'}`}>
+                          <div className="flex items-center gap-3"><span className={`font-bold ${i === 0 ? 'text-yellow-400' : i === 1 ? 'text-gray-300' : i === 2 ? 'text-amber-600' : 'text-gray-500'}`}>#{i+1}</span><span className="text-white font-medium">{user.n}</span></div>
+                          <span className="font-mono text-blue-400 font-bold">{user.p} pts</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {gameState === STATES.READY && (
+                <div className="flex flex-col items-center animate-in fade-in zoom-in duration-200">
+                  <div className={`w-16 h-16 border-4 ${theme.border} border-t-current rounded-full animate-spin mb-6 ${theme.highlight}`}></div>
+                  <h2 className={`text-2xl font-bold tracking-widest uppercase ${theme.muted}`}>Atenção</h2>
+                </div>
+              )}
+
+              {gameState === STATES.MEMORIZE && (
+                <div className="flex flex-col items-center justify-center w-full max-w-sm h-64 relative">
+                  {gameMode === MODES.EXTREME && distractions.map(dist => (
+                    <div key={dist.id} style={{ top: dist.top, left: dist.left, transform: `scale(${dist.scale})`, opacity: dist.opacity }} className="absolute text-red-500 font-mono font-black animate-pulse blur-[1px] select-none pointer-events-none">{dist.char}</div>
+                  ))}
+                  <div className={`text-7xl sm:text-8xl font-black tracking-widest drop-shadow-[0_0_20px_rgba(255,255,255,0.3)] animate-in fade-in zoom-in-110 duration-100 ${theme.text} ${gameMode === MODES.EXTREME ? 'animate-bounce' : ''}`}>{targetNumber}</div>
+                </div>
+              )}
+
+              {gameState === STATES.INPUT && (
+                <div className="w-full max-w-sm flex flex-col items-center animate-in slide-in-from-bottom-8 duration-300">
+                  <h2 className={`text-xl mb-6 font-medium text-center ${gameMode === MODES.REVERSE ? 'text-orange-400 animate-bounce' : gameMode === MODES.EXTREME ? 'text-red-500 font-bold uppercase tracking-widest' : theme.muted}`}>
+                    {gameMode === MODES.REVERSE ? 'Digita de trás para a frente!' : gameMode === MODES.EXTREME ? 'Sobrevive!' : 'Qual era o número?'}
+                  </h2>
+                  <div className="flex justify-center gap-2 mb-4 w-full px-4">
+                    {Array.from({ length: difficulty }).map((_, index) => (
+                      <div key={index} className={`h-16 flex-1 flex items-center justify-center text-4xl font-bold rounded-xl border-b-4 transition-all ${userInput[index] ? `border-current ${theme.highlight} ${theme.card} shadow-inner` : `${theme.border}`}`}>{userInput[index] || ''}</div>
+                    ))}
+                  </div>
+                  <Numpad />
+                </div>
+              )}
+
+              {gameState === STATES.RESULT && (
+                <div className="w-full max-w-sm flex flex-col items-center text-center animate-in fade-in zoom-in-95 duration-300 mt-8">
+                  {gameMode === MODES.TIME_ATTACK && timeLeft <= 0 ? (
+                     <>
+                        <div className="w-24 h-24 rounded-full flex items-center justify-center mb-6 bg-blue-500/20 text-blue-400"><Timer size={48} /></div>
+                        <h2 className="text-3xl font-bold mb-2 text-blue-400">Tempo Esgotado!</h2>
+                        <p className={`text-xl mb-8 ${theme.muted}`}>Obtiveste <strong className={theme.text}>{score} pontos</strong></p>
+                     </>
+                  ) : (
+                     <>
+                        <div className={`w-24 h-24 rounded-full flex items-center justify-center mb-6 shadow-lg relative ${isCorrect ? 'bg-green-500/20 text-green-500 shadow-green-500/20' : 'bg-red-500/20 text-red-500 shadow-red-500/20'}`}>
+                          {isCorrect ? <Check size={48} strokeWidth={3} /> : <Delete size={48} strokeWidth={3} />}
+                        </div>
+                        <h2 className={`text-3xl font-bold mb-6 ${isCorrect ? 'text-green-500' : 'text-red-500'}`}>{isCorrect ? 'Excelente!' : 'Não foi desta vez'}</h2>
+                     </>
+                  )}
+
+                  <div className={`${theme.card} ${theme.border} w-full rounded-2xl p-6 mb-6 space-y-4 shadow-inner`}>
+                    <div className={`flex justify-between items-center border-b ${theme.border} pb-4`}><span className={`text-sm uppercase tracking-wider ${theme.muted}`}>Número real</span><span className="text-2xl font-bold tracking-widest">{targetNumber || '---'}</span></div>
+                    {gameMode === MODES.REVERSE && targetNumber && (
+                      <div className={`flex justify-between items-center border-b ${theme.border} pb-4 pt-2`}><span className={`text-sm uppercase tracking-wider ${theme.muted}`}>Invertido</span><span className="text-2xl font-bold tracking-widest text-orange-400">{targetNumber.split('').reverse().join('')}</span></div>
+                    )}
+                    <div className="flex justify-between items-center pt-2"><span className={`text-sm uppercase tracking-wider ${theme.muted}`}>A tua resposta</span><span className={`text-2xl font-bold tracking-widest ${isCorrect ? 'text-green-500' : 'text-red-500 line-through'}`}>{userInput || '---'}</span></div>
+                  </div>
+
+                  <button onClick={() => startRound(gameMode === MODES.TIME_ATTACK || !isCorrect)} className={`w-full font-bold py-4 px-8 rounded-2xl text-lg flex items-center justify-center gap-2 transition-all active:scale-95 touch-manipulation shadow-lg ${theme.primary} ${theme.primaryActive} ${theme.btnText}`}>
+                    {gameMode === MODES.TIME_ATTACK && timeLeft <= 0 ? 'Jogar Novamente' : (isCorrect ? 'Próxima Ronda' : 'Tentar Novamente')}
+                    <RotateCcw size={20} />
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
 
