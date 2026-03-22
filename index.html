@@ -129,7 +129,6 @@
         let app, auth, db;
         const initFirebase = () => {
             if (!window.FirebaseAPI) return false;
-            
             const myPersonalFirebaseConfig = {
                 apiKey: "AIzaSyCtumiKm4-RerZjnFSPUVZimsWSlCRM74o",
                 authDomain: "memofast-d38fd.firebaseapp.com",
@@ -138,9 +137,7 @@
                 messagingSenderId: "501439979855",
                 appId: "1:501439979855:web:11ee3bbbb4e89fdb1ba53a"
             };
-
             const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : myPersonalFirebaseConfig;
-            
             try {
                 app = window.FirebaseAPI.initializeApp(firebaseConfig);
                 auth = window.FirebaseAPI.getAuth(app);
@@ -171,6 +168,7 @@
           const [globalRanking, setGlobalRanking] = useState([]);
           const [lbModeFilter, setLbModeFilter] = useState('CLASSIC');
           const [lbDiffFilter, setLbDiffFilter] = useState(4);
+          const [authError, setAuthError] = useState(false);
           
           const [xp, setXp] = useState(() => parseInt(localStorage.getItem('memory-xp') || '0'));
           const [showLevelUp, setShowLevelUp] = useState(false);
@@ -202,7 +200,6 @@
           const [unlockedThemes, setUnlockedThemes] = useState(() => JSON.parse(localStorage.getItem('memory-themes') || '["classic"]'));
           const [activeTheme, setActiveTheme] = useState(() => localStorage.getItem('memory-active-theme') || 'classic');
           const [previewThemeId, setPreviewThemeId] = useState(null); 
-          
           const [unlockedSounds, setUnlockedSounds] = useState(() => JSON.parse(localStorage.getItem('memory-sounds') || '["classic"]'));
           const [activeSoundPack, setActiveSoundPack] = useState(() => localStorage.getItem('memory-active-sound') || 'classic');
 
@@ -213,17 +210,13 @@
 
           useEffect(() => {
             if (!auth) return;
-            const initAuth = async () => {
-              try {
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                  await window.FirebaseAPI.signInWithCustomToken(auth, __initial_auth_token);
+            const unsubscribe = window.FirebaseAPI.onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    setFbUser(user);
                 } else {
-                  await window.FirebaseAPI.signInAnonymously(auth);
+                    window.FirebaseAPI.signInAnonymously(auth).catch(() => setAuthError(true));
                 }
-              } catch (e) {}
-            };
-            initAuth();
-            const unsubscribe = window.FirebaseAPI.onAuthStateChanged(auth, setFbUser);
+            });
             return () => unsubscribe();
           }, []);
 
@@ -255,6 +248,7 @@
                       avatarIcon: profile.avatarIcon,
                       avatarBg: profile.avatarBg,
                       avatarText: profile.avatarText,
+                      avatarUrl: profile.avatarUrl || null,
                       score: newScore,
                       mode: gameMod,
                       difficulty: diff,
@@ -262,6 +256,34 @@
                   });
               } catch (e) {}
           };
+
+          useEffect(() => {
+              if (!fbUser || !db) return;
+              const syncLocalScores = async () => {
+                  const syncedScores = JSON.parse(localStorage.getItem('memory-synced-scores') || '{}');
+                  const lastSyncedProfile = localStorage.getItem('memory-synced-profile') || '';
+                  const currentProfileStr = JSON.stringify(profile);
+                  const profileChanged = lastSyncedProfile !== currentProfileStr;
+                  let madeChanges = false;
+
+                  for (const mode of Object.keys(MODES)) {
+                      for (const diff of [4, 5, 6]) {
+                          const localBest = parseInt(localStorage.getItem(`memory-best-${mode}-${diff}`) || '0');
+                          const key = `${mode}-${diff}`;
+                          if (localBest > 0 && (localBest > (syncedScores[key] || 0) || profileChanged)) {
+                              await uploadScoreToFirebase(localBest, mode, diff);
+                              syncedScores[key] = localBest;
+                              madeChanges = true;
+                          }
+                      }
+                  }
+                  if (madeChanges || profileChanged) {
+                      localStorage.setItem('memory-synced-scores', JSON.stringify(syncedScores));
+                      localStorage.setItem('memory-synced-profile', currentProfileStr);
+                  }
+              };
+              syncLocalScores();
+          }, [fbUser, profile]);
 
           useEffect(() => {
             const saved = localStorage.getItem(`memory-best-${gameMode}-${difficulty}`);
@@ -393,14 +415,14 @@
             return Math.floor(Math.random() * (max - min + 1) + min).toString();
           }, []);
 
-          const generateDistractions = useCallback(() => {
+          const generateDistractions = useCallback((diffParam = difficulty) => {
             const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%'; const dist = [];
-            for (let i = 0; i < difficulty * 2; i++) {
+            for (let i = 0; i < diffParam * 2; i++) {
               dist.push({ id: i, char: chars.charAt(Math.floor(Math.random() * chars.length)), top: `${Math.random() * 80 + 10}%`, left: `${Math.random() * 80 + 10}%`, scale: Math.random() * 1.5 + 0.5, opacity: Math.random() * 0.5 + 0.2 });
             } return dist;
           }, [difficulty]);
 
-          const startRound = useCallback((resetScore = false) => {
+          const startRound = useCallback((resetScore = false, diffOverride = difficulty) => {
             updateStreak(); setShowLevelUp(false);
             if (resetScore) {
               setScore(0); if (gameMode === 'TIME_ATTACK') setTimeLeft(60);
@@ -410,8 +432,8 @@
                   localStorage.setItem('memory-stats', JSON.stringify(newStats)); return newStats;
               });
             }
-            setTargetNumber(generateNumber(difficulty));
-            if (gameMode === 'EXTREME') setDistractions(generateDistractions());
+            setTargetNumber(generateNumber(diffOverride));
+            if (gameMode === 'EXTREME') setDistractions(generateDistractions(diffOverride));
             setUserInput(''); setGameState(STATES.READY);
           }, [difficulty, gameMode, generateNumber, generateDistractions, updateStreak]);
 
@@ -470,7 +492,7 @@
                   localStorage.setItem('memory-stats', JSON.stringify(newStats)); return newStats;
               });
 
-              if (gameMode === 'TIME_ATTACK' && timeLeft > 0) { startRound(false); return; }
+              if (gameMode === 'TIME_ATTACK' && timeLeft > 0) { startRound(false, difficulty); return; }
             } else playSound('error');
             
             setIsCorrect(correct); setGameState(STATES.RESULT);
@@ -563,9 +585,9 @@
                   
                   <div className="w-full space-y-3">
                     {[4, 5, 6].map((level) => (
-                      <button key={level} onClick={() => { playSound('tap'); setDifficulty(level); startRound(true); }} className={`w-full flex items-center justify-between p-4 rounded-2xl transition-all active:scale-95 group ${theme.card} border-2 ${difficulty === level ? `border-current ${theme.highlight}` : 'border-transparent'}`}>
+                      <button key={level} onClick={() => { playSound('tap'); setDifficulty(level); startRound(true, level); }} className={`w-full flex items-center justify-between p-4 rounded-2xl transition-all active:scale-95 group ${theme.card} border-2 ${difficulty === level ? `border-current ${theme.highlight}` : 'border-transparent'}`}>
                         <div className="text-left"><div className="font-bold text-lg">{DIFFS[level]}</div></div>
-                        <div className="text-right"><div className="text-[10px] uppercase font-bold text-yellow-500">Recorde</div><div className="font-bold text-sm">{localStorage.getItem(`memory-best-${gameMode}-${level}`) || 0}</div></div>
+                        <div className="text-right"><div className="text-[10px] uppercase font-bold text-yellow-500">Recorde Local</div><div className="font-bold text-sm">{localStorage.getItem(`memory-best-${gameMode}-${level}`) || 0}</div></div>
                       </button>
                     ))}
                   </div>
@@ -669,7 +691,7 @@
 
               {gameState === STATES.LEADERBOARD && (
                 <div className="w-full max-w-md flex flex-col items-center animate-in fade-in duration-300 pb-10 mt-4 h-[90vh]">
-                  <div className="w-full flex justify-between items-center mb-6 px-2">
+                  <div className="w-full flex justify-between items-center mb-8 px-2">
                      <button onClick={() => { playSound('tap'); setGameState(STATES.MENU); }} className={`w-10 h-10 flex items-center justify-center ${theme.card} rounded-full`}><i className="fa-solid fa-arrow-left text-[20px]"></i></button>
                      <h2 className="text-2xl font-bold flex items-center gap-2"><i className="fa-solid fa-globe text-[20px] text-blue-400"></i> Global</h2>
                      <div className="w-10"></div>
@@ -682,7 +704,15 @@
                         {Object.keys(DIFFS).map(k => <option key={k} value={k}>{DIFFS[k]}</option>)}
                      </select>
                   </div>
-                  <div className="w-full rounded-3xl overflow-hidden bg-gray-900 border border-gray-800 p-2 flex-1 flex flex-col">
+                  <div className="w-full rounded-3xl overflow-hidden bg-gray-900 border border-gray-800 p-2 flex-1 flex flex-col relative">
+                    {authError && (
+                        <div className="absolute inset-0 bg-gray-950/90 z-20 flex flex-col items-center justify-center p-6 text-center">
+                            <i className="fa-solid fa-triangle-exclamation text-[48px] text-red-500 mb-4"></i>
+                            <h3 className="text-xl font-bold text-white mb-2">Erro de Autenticação</h3>
+                            <p className="text-gray-400 text-sm mb-4">Certifique-se de que ativou o método "Anónimo" (Anonymous) no seu Firebase.</p>
+                            <button onClick={() => setGameState(STATES.MENU)} className="bg-red-600 text-white font-bold py-2 px-6 rounded-xl">Voltar</button>
+                        </div>
+                    )}
                     <div className="flex justify-between text-xs text-gray-500 font-bold uppercase px-4 pt-2 pb-4 border-b border-gray-800"><span>Jogador</span><span>Score</span></div>
                     <div className="overflow-y-auto flex-1 px-2 pb-2 space-y-2 mt-3" style={{ scrollbarWidth: 'none' }}>
                         {fbUser ? (
@@ -691,14 +721,16 @@
                                     <div key={i} className={`flex justify-between items-center p-3 rounded-xl ${user.userId === fbUser.uid ? 'bg-blue-900/40 border border-blue-500/50 shadow-inner' : 'bg-gray-800'}`}>
                                         <div className="flex items-center gap-3">
                                             <span className={`font-black w-5 text-center ${i === 0 ? 'text-yellow-400 text-lg drop-shadow-[0_0_5px_yellow]' : i === 1 ? 'text-gray-300' : i === 2 ? 'text-amber-600' : 'text-gray-500 text-xs'}`}>{i < 3 ? <i className="fa-solid fa-medal"></i> : `#${i+1}`}</span>
-                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center border border-gray-600 ${user.avatarBg || 'bg-gray-700'} ${user.avatarText || 'text-white'}`}><i className={`fa-solid ${user.avatarIcon || 'fa-user'} text-[12px]`}></i></div>
+                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center border border-gray-600 ${user.avatarBg || 'bg-gray-700'} ${user.avatarText || 'text-white'} overflow-hidden`}>
+                                                {user.avatarUrl ? <img src={user.avatarUrl} alt="Avatar" className="w-full h-full object-cover" /> : <i className={`fa-solid ${user.avatarIcon || 'fa-user'} text-[12px]`}></i>}
+                                            </div>
                                             <div className="flex flex-col"><span className={`font-bold text-sm ${user.userId === fbUser.uid ? 'text-blue-300' : 'text-white'}`}>{user.nickname} {user.userId === fbUser.uid && '(Tu)'}</span></div>
                                         </div>
                                         <span className="font-mono text-blue-400 font-black text-lg">{user.score}</span>
                                     </div>
                                 ))
                             ) : ( <div className="text-center text-gray-500 pt-10 font-bold"><i className="fa-solid fa-ghost text-[40px] mb-4 opacity-50 block"></i>Sem recordes aqui.<br/>Sê o primeiro!</div> )
-                        ) : ( <div className="text-center text-gray-500 pt-10 font-bold"><i className="fa-solid fa-wifi text-[40px] mb-4 opacity-50 block"></i>A ligar aos servidores mundiais...<br/>Verifica a ligação.</div> )}
+                        ) : ( <div className="text-center text-gray-500 pt-10 font-bold"><i className="fa-solid fa-spinner fa-spin text-[40px] mb-4 block"></i>A ligar aos servidores mundiais...</div> )}
                     </div>
                   </div>
                 </div>
@@ -731,7 +763,7 @@
                     {gameMode === 'REVERSE' && targetNumber && <div className={`flex justify-between items-center border-b ${theme.border} pb-4 pt-2`}><span className={`text-sm uppercase tracking-wider ${theme.muted}`}>Invertido</span><span className="text-2xl font-bold tracking-widest text-orange-400">{targetNumber.split('').reverse().join('')}</span></div>}
                     <div className="flex justify-between items-center pt-2"><span className={`text-sm uppercase tracking-wider ${theme.muted}`}>A tua resposta</span><span className={`text-2xl font-bold tracking-widest ${isCorrect ? 'text-green-500' : 'text-red-500 line-through'}`}>{userInput || '---'}</span></div>
                   </div>
-                  <button onClick={() => startRound(gameMode === 'TIME_ATTACK' || !isCorrect)} className={`w-full font-bold py-4 px-8 rounded-2xl text-lg flex items-center justify-center gap-2 transition-all active:scale-95 touch-manipulation shadow-lg ${theme.primary} ${theme.primaryActive} ${theme.btnText}`}>{gameMode === 'TIME_ATTACK' && timeLeft <= 0 ? 'Jogar Novamente' : (isCorrect ? 'Próxima Ronda' : 'Tentar Novamente')} <i className="fa-solid fa-rotate-left text-[20px]"></i></button>
+                  <button onClick={() => startRound(gameMode === 'TIME_ATTACK' || !isCorrect, difficulty)} className={`w-full font-bold py-4 px-8 rounded-2xl text-lg flex items-center justify-center gap-2 transition-all active:scale-95 touch-manipulation shadow-lg ${theme.primary} ${theme.primaryActive} ${theme.btnText}`}>{gameMode === 'TIME_ATTACK' && timeLeft <= 0 ? 'Jogar Novamente' : (isCorrect ? 'Próxima Ronda' : 'Tentar Novamente')} <i className="fa-solid fa-rotate-left text-[20px]"></i></button>
                 </div>
               )}
             </div>
